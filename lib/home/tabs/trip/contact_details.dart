@@ -32,7 +32,7 @@ class _ContactDetailsPageState extends State<ContactDetailsPage> {
   bool _isEmailSent = false;
   bool _isEmailVerified = false;
   
-  // Loading State for final submission
+  // Loading State
   bool _isSubmitting = false;
 
   @override
@@ -80,7 +80,7 @@ class _ContactDetailsPageState extends State<ContactDetailsPage> {
     setState(() => _isEmailVerified = true);
   }
 
-  // --- Final Action: Save to Server ---
+  // --- Final Action: Save to Server & Navigate ---
   Future<void> _onSlideComplete() async {
     setState(() => _isSubmitting = true);
 
@@ -90,6 +90,7 @@ class _ContactDetailsPageState extends State<ContactDetailsPage> {
 
       if (_tripId == null) {
         _showError("Error: Trip ID missing.");
+        setState(() => _isSubmitting = false);
         return;
       }
 
@@ -109,27 +110,22 @@ class _ContactDetailsPageState extends State<ContactDetailsPage> {
       );
 
       if (response.statusCode == 200 || response.statusCode == 201) {
-        // Success! Show Dialog and Navigate
         if (!mounted) return;
-        showDialog(
-          context: context,
-          barrierDismissible: false,
-          builder: (ctx) => AlertDialog(
-            title: const Text("Trip Published!"),
-            content: const Text("Your trip has been successfully verified and published."),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Navigator.pushNamedAndRemoveUntil(context, AppRoutes.home, (route) => false);
-                },
-                child: const Text("Go to Dashboard"),
-              )
-            ],
-          ),
+
+        // Show a success message
+        _showSuccess("Trip published successfully!");
+
+        // --- THE FIX ---
+        // Clear the entire stack and set "Home" as the only page. 
+        // No more pushing the groupChat.
+        Navigator.pushNamedAndRemoveUntil(
+          context, 
+          AppRoutes.home, 
+          (route) => false
         );
+
       } else {
         _showError("Server Error: ${response.body}");
-        // Reset slide if failed so user can try again
         setState(() => _isSubmitting = false); 
       }
     } catch (e) {
@@ -141,13 +137,13 @@ class _ContactDetailsPageState extends State<ContactDetailsPage> {
   void _showError(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: Colors.red));
   }
+  
   void _showSuccess(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: Colors.green));
   }
 
   @override
   Widget build(BuildContext context) {
-    // Both must be verified to enable the slider
     bool canFinalize = _isPhoneVerified && _isEmailVerified && !_isSubmitting;
 
     return Scaffold(
@@ -240,7 +236,7 @@ class _ContactDetailsPageState extends State<ContactDetailsPage> {
           child: TextField(
             controller: _phoneController,
             keyboardType: TextInputType.phone,
-            enabled: !_isPhoneVerified, // Lock if verified
+            enabled: !_isPhoneVerified, 
             inputFormatters: [
               FilteringTextInputFormatter.digitsOnly,
               LengthLimitingTextInputFormatter(10),
@@ -258,7 +254,7 @@ class _ContactDetailsPageState extends State<ContactDetailsPage> {
         _isPhoneVerified 
           ? const Icon(Icons.check_circle, color: Colors.green, size: 32)
           : ElevatedButton(
-              onPressed: _isPhoneSent ? null : _sendPhoneOtp, // Disable if OTP sent
+              onPressed: _isPhoneSent ? null : _sendPhoneOtp,
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.black,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
@@ -277,7 +273,7 @@ class _ContactDetailsPageState extends State<ContactDetailsPage> {
           child: TextField(
             controller: _emailController,
             keyboardType: TextInputType.emailAddress,
-            enabled: !_isEmailVerified, // Lock if verified
+            enabled: !_isEmailVerified,
             decoration: InputDecoration(
               hintText: "Enter email address",
               filled: true,
@@ -333,7 +329,7 @@ class _ContactDetailsPageState extends State<ContactDetailsPage> {
   }
 }
 
-// --- Custom Slide to Confirm Widget (Standardized) ---
+// --- Custom Slide to Confirm Widget ---
 class SlideAction extends StatefulWidget {
   final bool isActive;
   final VoidCallback onSubmit;

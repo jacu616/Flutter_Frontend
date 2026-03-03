@@ -34,7 +34,17 @@ dependencies:
   shadcn_flutter: ^0.0.47
   flutter_secure_storage: ^9.0.0
   shared_preferences: ^2.3.5
+
+  firebase_core: ^3.4.0
+  firebase_storage: ^12.2.0
+  firebase_auth: ^5.1.4
+  cloud_firestore: ^5.4.0
+  google_sign_in: ^6.2.1
+  
+  image_picker: ^1.0.7
+  file_picker: ^8.0.0
   intl: ^0.19.0
+  # Ensure you have firebase_core setup in your main.dart
 
 
 
@@ -68,6 +78,7 @@ flutter:
   # To add assets to your application, add an assets section, like this:
   assets:
     - assets/google.webp
+    - assets/logo.png
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

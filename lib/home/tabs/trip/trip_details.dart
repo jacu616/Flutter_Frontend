@@ -144,7 +144,6 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
             'destination': _destinationController.text,
             'startDate': DateFormat('yyyy-MM-dd').format(_selectedDateRange!.start),
             'endDate': DateFormat('yyyy-MM-dd').format(_selectedDateRange!.end),
-            // --- FIX IS HERE: Sending the passenger count ---
             'passengers': _passengerCount.toInt(), 
           }
         );
@@ -242,7 +241,21 @@ class _TripDetailsPageState extends State<TripDetailsPage> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Text("Passengers", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                          // --- UPDATED PASSENGER TEXT SECTION ---
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                "Passengers", 
+                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                "Remaining available seats", 
+                                style: TextStyle(color: Colors.grey, fontSize: 12)
+                              ),
+                            ],
+                          ),
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                             decoration: BoxDecoration(color: Colors.black, borderRadius: BorderRadius.circular(12)),

@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart'; // Import this
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_sign_in/google_sign_in.dart'; // Added this
 import '../routes.dart';
 import 'package:flutter_app/config/config.dart';
 
-
-// Check your IP address: Logic snippet had .36, UI had .37. Using .36 based on recent context.
 const String baseUrl = AppConfig.baseUrl;
 
 class SignupPage extends StatefulWidget {
@@ -22,55 +22,65 @@ class _SignupPageState extends State<SignupPage> {
   final TextEditingController lastNameController = TextEditingController();
   final TextEditingController passwordController = TextEditingController();
   
-  // State variables from Logic
   bool _obscurePassword = true; 
   bool _isLoading = false;
-  String responseText = ""; // Kept from UI just in case, though mostly unused now
 
-  // --- LOGIC FUNCTION (From your 2nd snippet) ---
+  // --- HELPER TO HANDLE SUCCESSFUL DJANGO RESPONSE ---
+  Future<void> _handleDjangoSignupResponse(http.Response response) async {
+    if (response.statusCode == 200 || response.statusCode == 201) {
+      final data = jsonDecode(response.body);
+
+      if (data.containsKey('key') && data['key'] != null) {
+         final prefs = await SharedPreferences.getInstance();
+         await prefs.setString('auth_token', data['key']);
+         
+         if(mounted) {
+           ScaffoldMessenger.of(context).showSnackBar(
+             const SnackBar(content: Text("Account Created & Logged In!"))
+           );
+           Navigator.pushNamedAndRemoveUntil(context, AppRoutes.home, (route) => false);
+         }
+      } else {
+         if(mounted) {
+           ScaffoldMessenger.of(context).showSnackBar(
+             const SnackBar(content: Text("Account Created! Please Log In."))
+           );
+           Navigator.pushNamed(context, AppRoutes.login);
+         }
+      }
+    } else {
+      throw Exception("Signup Failed: ${response.body}");
+    }
+  }
+
+  // --- EMAIL SIGNUP LOGIC ---
   Future<void> sendData() async {
     setState(() => _isLoading = true);
 
-    // Prepare full body data
-    final body = {
-      "email": emailController.text,
-      "password": passwordController.text,
-      "first_name": firstNameController.text,
-      "last_name": lastNameController.text,
-    };
-
     try {
-      final response = await http.post(
-        Uri.parse("$baseUrl/api/signup/"), // Endpoint
-        headers: {"Content-Type": "application/json"},
-        body: jsonEncode(body),
+      UserCredential userCredential =
+          await FirebaseAuth.instance.createUserWithEmailAndPassword(
+        email: emailController.text.trim(),
+        password: passwordController.text.trim(),
       );
 
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        final data = jsonDecode(response.body);
-        
-        // Check if server returned a key for auto-login
-        if (data.containsKey('key')) {
-           final prefs = await SharedPreferences.getInstance();
-           await prefs.setString('auth_token', data['key']);
-           
-           if(mounted) {
-             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Account Created & Logged In!")));
-             // Navigate to Home
-             Navigator.pushNamedAndRemoveUntil(context, AppRoutes.home, (route) => false);
-           }
-        } else {
-           // If no key, redirect to login
-           if(mounted) {
-             ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Account Created! Please Log In.")));
-             Navigator.pushNamed(context, AppRoutes.login);
-           }
-        }
-      } else {
-        if(mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Signup Failed: ${response.body}")));
-        }
-      }
+      await userCredential.user!.updateDisplayName(
+        "${firstNameController.text.trim()} ${lastNameController.text.trim()}",
+      );
+
+      String? idToken = await userCredential.user!.getIdToken();
+
+      final response = await http.post(
+        Uri.parse("$baseUrl/api/signup/"),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({
+          "id_token": idToken,
+          "first_name": firstNameController.text.trim(),
+          "last_name": lastNameController.text.trim(),
+        }),
+      );
+
+      await _handleDjangoSignupResponse(response);
     } catch (e) {
       debugPrint("Error: $e");
       if(mounted) {
@@ -81,7 +91,53 @@ class _SignupPageState extends State<SignupPage> {
     }
   }
 
-  // --- UI BUILD METHOD (From your 1st snippet) ---
+  // --- GOOGLE SIGNUP LOGIC ---
+  Future<void> signupWithGoogle() async {
+    setState(() => _isLoading = true);
+
+    try {
+      final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
+      if (googleUser == null) {
+        setState(() => _isLoading = false);
+        return; 
+      }
+
+      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+
+      final AuthCredential credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+
+      UserCredential userCredential = await FirebaseAuth.instance.signInWithCredential(credential);
+      String? idToken = await userCredential.user!.getIdToken();
+
+      // Extract first and last name from Google Profile safely
+      List<String> names = (googleUser.displayName ?? "").trim().split(" ");
+      String firstName = names.isNotEmpty ? names.first : "Google";
+      String lastName = names.length > 1 ? names.sublist(1).join(" ") : "User";
+
+      final response = await http.post(
+        Uri.parse("$baseUrl/api/signup/"),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({
+          "id_token": idToken,
+          "first_name": firstName,
+          "last_name": lastName,
+        }),
+      );
+
+      await _handleDjangoSignupResponse(response);
+    } catch (e) {
+      debugPrint("Google Signup Error: $e");
+      if(mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Google Signup Error: $e")));
+      }
+    } finally {
+      if(mounted) setState(() => _isLoading = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -89,7 +145,6 @@ class _SignupPageState extends State<SignupPage> {
       body: SingleChildScrollView(
         child: Column(
           children: [
-
             /// HEADER
             Container(
               height: 180,
@@ -109,34 +164,19 @@ class _SignupPageState extends State<SignupPage> {
               child: Stack(
                 children: [
                   Positioned(
-                    top: -40,
-                    left: -40,
-                    child: CircleAvatar(
-                      radius: 90, 
-                      backgroundColor: Color(0xFFDCC169),
-                    ),
+                    top: -40, left: -40,
+                    child: const CircleAvatar(radius: 90, backgroundColor: Color(0xFFDCC169)),
                   ),
-                  
                   Positioned(
-                    bottom: -30,
-                    right: -30,
-                    child: CircleAvatar(
-                      radius: 70, 
-                      backgroundColor: Color(0xFF8AD3B5),
-                    ),
+                    bottom: -30, right: -30,
+                    child: const CircleAvatar(radius: 70, backgroundColor: Color(0xFF8AD3B5)),
                   ),
-
                   const SafeArea(
                     child: Center(
                       child: Text(
                         "Create an\naccount",
                         textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 32,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.white,
-                          height: 1.2,
-                        ),
+                        style: TextStyle(fontSize: 32, fontWeight: FontWeight.w800, color: Colors.white, height: 1.2),
                       ),
                     ),
                   ),
@@ -152,7 +192,7 @@ class _SignupPageState extends State<SignupPage> {
 
                   /// GOOGLE BUTTON
                   OutlinedButton(
-                    onPressed: () {},
+                    onPressed: _isLoading ? null : signupWithGoogle,
                     style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
@@ -161,16 +201,11 @@ class _SignupPageState extends State<SignupPage> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        // Ensure you have this asset or replace with Icon(Icons.login)
                         Image.asset('assets/google.webp', height: 24, width: 24),
                         const SizedBox(width: 8),
                         const Text(
                           "Sign in with Google",
-                          style: TextStyle(
-                            color: Colors.black87, 
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600
-                          ),
+                          style: TextStyle(color: Colors.black87, fontSize: 16, fontWeight: FontWeight.w600),
                         ),
                       ],
                     ),
@@ -238,27 +273,20 @@ class _SignupPageState extends State<SignupPage> {
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
-                      // Update: Disable if loading, call sendData logic
                       onPressed: _isLoading ? null : sendData,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.black,
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 18),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(30),
-                        ),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
                         elevation: 0,
                       ),
-                      // Update: Show spinner if loading
                       child: _isLoading 
                         ? const SizedBox(
                             height: 20, width: 20, 
                             child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)
                           )
-                        : const Text(
-                            "Create account",
-                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                          ),
+                        : const Text("Create account", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                     ),
                   ),
 
@@ -280,10 +308,7 @@ class _SignupPageState extends State<SignupPage> {
                         onTap: () {
                           Navigator.pushNamed(context, AppRoutes.login);
                         },
-                        child: const Text(
-                          "Log in here",
-                          style: TextStyle(fontWeight: FontWeight.bold, decoration: TextDecoration.underline),
-                        ),
+                        child: const Text("Log in here", style: TextStyle(fontWeight: FontWeight.bold, decoration: TextDecoration.underline)),
                       ),
                     ],
                   ),
@@ -296,7 +321,6 @@ class _SignupPageState extends State<SignupPage> {
     );
   }
 
-  // Helper method from UI source
   static Widget _buildTextField(TextEditingController controller, String label) {
     return TextField(
       controller: controller,

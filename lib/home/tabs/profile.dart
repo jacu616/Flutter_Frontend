@@ -1,4 +1,3 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -6,28 +5,46 @@ import 'dart:convert';
 import '../../routes.dart';
 import 'package:flutter_app/config/config.dart';
 
-
-// UPDATED IP: Ensure this matches your computer's current IP (checked via ipconfig)
+// Ensure this matches your computer's current IP
 const String baseUrl = AppConfig.baseUrl;
 
 class UserProfile extends StatefulWidget {
-  const UserProfile({super.key});
+  const UserProfile({Key? key}) : super(key: key);
 
   @override
   State<UserProfile> createState() => _UserProfileState();
 }
 
-class _UserProfileState extends State<UserProfile> {
-  // Variables to hold profile data
-  String username = "Loading...";
-  String email = "Loading..."; // Added variable for email
-  String bio = "Loading...";
-  String postCount = "-";
+class _UserProfileState extends State<UserProfile> with SingleTickerProviderStateMixin {
+  late TabController _tabController;
   
+  // Variables to hold API profile data
+  String username = "Loading...";
+  String email = "Loading..."; 
+  String bio = "Loading...";
+  String postCountStr = "-";
+  int _parsedPostCount = 0; // Used for the GridView itemCount
+
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+    _checkAuthStatus();
     fetchProfileData();
+  }
+
+  // --- AUTH & DATA FUNCTIONS ---
+
+  Future<void> _checkAuthStatus() async {
+    final prefs = await SharedPreferences.getInstance();
+    final String? token = prefs.getString('auth_token');
+
+    if (token == null) {
+      if (mounted) {
+        // Redirect to login if no token
+        Navigator.pushNamedAndRemoveUntil(context, AppRoutes.login, (route) => false);
+      }
+    }
   }
 
   Future<void> fetchProfileData() async {
@@ -49,10 +66,14 @@ class _UserProfileState extends State<UserProfile> {
         final data = jsonDecode(response.body);
         setState(() {
           // Parse data from server
-          username = data['first_name'] + " " + data['last_name'] ?? "Unknown";
-          email = data['email'] ?? "No email"; // Get email from response
+          username = "${data['first_name'] ?? ''} ${data['last_name'] ?? ''}".trim();
+          if (username.isEmpty) username = "Unknown";
+          
+          email = data['email'] ?? "No email";
           bio = data['bio'] ?? "No bio yet.";
-          postCount = data['post_count'].toString();
+          
+          postCountStr = data['post_count']?.toString() ?? "0";
+          _parsedPostCount = int.tryParse(postCountStr) ?? 0;
         });
       }
     } catch (e) {
@@ -60,148 +81,343 @@ class _UserProfileState extends State<UserProfile> {
     }
   }
 
-  // --- LOGOUT FUNCTION ---
-  Future<void> logout() async {
+  Future<void> _logout() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('auth_token'); // Clear the key
     
     if (mounted) {
-      // Navigate to Login and remove all previous routes so back button doesn't work
+      // Navigate to Login and remove all previous routes
       Navigator.pushNamedAndRemoveUntil(context, AppRoutes.login, (route) => false);
+    }
+  }
+
+  // --- UI DIALOGS ---
+
+  void _showLogoutDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text("Logout"),
+        content: const Text("Are you sure you want to logout?"),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text("Cancel")),
+          ElevatedButton(
+            onPressed: _logout, // Calls the updated logout logic
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.black,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text("Logout"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showSettingsMenu() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
+      ),
+      builder: (context) {
+        return Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 20),
+                decoration: BoxDecoration(
+                  color: Colors.grey[400],
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              _bottomItem(Icons.settings, "Settings"),
+              _bottomItem(Icons.tune, "Account Preferences"),
+              _bottomItem(Icons.lock_outline, "Privacy"),
+              const Divider(),
+              ListTile(
+                leading: const Icon(Icons.logout, color: Colors.red),
+                title: const Text("Logout",
+                    style: TextStyle(color: Colors.red)),
+                onTap: () {
+                  Navigator.pop(context);
+                  _showLogoutDialog();
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _bottomItem(IconData icon, String title) {
+    return ListTile(
+      leading: Icon(icon),
+      title: Text(title),
+      onTap: () {},
+    );
+  }
+
+  // --- MAIN BUILD METHOD ---
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.white,
+      body: SafeArea(
+        child: Column(
+          children: [
+            /// HEADER
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              child: Stack(
+                alignment: Alignment.center,
+                children: [
+                  const Center(
+                    child: Text(
+                      "Profile",
+                      style: TextStyle(
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: GestureDetector(
+                      onTap: _showSettingsMenu,
+                      child: const _CompassSettingsIcon(),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 10),
+
+            /// NAME + BIO + PROFILE PIC
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          username, // Dynamically fetched
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          email, // Dynamically fetched
+                          style: const TextStyle(
+                            fontSize: 14,
+                            color: Colors.grey,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          bio, // Dynamically fetched
+                          style: const TextStyle(
+                            fontSize: 15,
+                            color: Colors.black87, // Slightly darker for readability vs email
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 15),
+                  GestureDetector(
+                    onTap: () {
+                      showDialog(
+                        context: context,
+                        builder: (_) => Dialog(
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(15),
+                            child: Image.network(
+                              "https://images.unsplash.com/photo-1500648767791-00dcc994a43e",
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                    child: Container(
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.black, width: 3),
+                      ),
+                      child: const CircleAvatar(
+                        radius: 45,
+                        backgroundImage: NetworkImage(
+                            "https://images.unsplash.com/photo-1500648767791-00dcc994a43e"),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const SizedBox(height: 15),
+
+            /// EDIT PROFILE BUTTON
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () {},
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.black,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                  ),
+                  child: const Text(
+                    "Edit Profile",
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 15),
+
+            /// STATS
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _StatItem(postCountStr, "Posts"), // Dynamically fetched
+                const _StatItem("24", "Trips"),
+                const _StatItem("1.2k", "Followers"),
+              ],
+            ),
+
+            const SizedBox(height: 20),
+
+            /// TABS
+            TabBar(
+              controller: _tabController,
+              indicatorColor: Colors.black,
+              labelColor: Colors.black,
+              unselectedLabelColor: Colors.grey,
+              tabs: const [
+                Tab(text: "Trips"),
+                Tab(text: "Posts"),
+              ],
+            ),
+
+            Expanded(
+              child: TabBarView(
+                controller: _tabController,
+                children: [
+                  /// TRIPS
+                  ListView(
+                    children: const [
+                      TripCard(title: "Manali Adventure", status: "Ongoing"),
+                      TripCard(title: "Goa Beach Escape", status: "Upcoming"),
+                      TripCard(title: "Ladakh Ride", status: "Completed"),
+                    ],
+                  ),
+
+                  /// POSTS
+                  GridView.builder(
+                    padding: const EdgeInsets.all(10),
+                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 3,
+                      crossAxisSpacing: 5,
+                      mainAxisSpacing: 5,
+                    ),
+                    itemCount: _parsedPostCount, // Matches the API post count
+                    itemBuilder: (context, index) => ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: Image.network(
+                        "https://picsum.photos/300/300?random=$index",
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// --- HELPER WIDGETS ---
+
+class _StatItem extends StatelessWidget {
+  final String value;
+  final String label;
+
+  const _StatItem(this.value, this.label);
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text(value,
+            style: const TextStyle(
+                fontSize: 18, fontWeight: FontWeight.bold)),
+        const SizedBox(height: 4),
+        Text(label, style: const TextStyle(color: Colors.grey)),
+      ],
+    );
+  }
+}
+
+class TripCard extends StatelessWidget {
+  final String title;
+  final String status;
+
+  const TripCard({Key? key, required this.title, required this.status}) : super(key: key);
+
+  Color _statusColor() {
+    switch (status) {
+      case "Ongoing":
+        return Colors.orange;
+      case "Upcoming":
+        return Colors.blue;
+      case "Completed":
+        return Colors.green;
+      default:
+        return Colors.grey;
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(username), 
-        actions: [
-          // --- LOGOUT BUTTON ---
-          IconButton(
-            icon: const Icon(Icons.logout, color: Colors.red), // Red logout icon
-            onPressed: logout,
-            tooltip: "Log Out",
-          ),
-        ],
+    return Card(
+      margin: const EdgeInsets.all(12),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(15),
       ),
-      body: DefaultTabController(
-        length: 2,
-        child: NestedScrollView(
-          headerSliverBuilder: (context, _) {
-            return [
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          CircleAvatar(
-                            radius: 40,
-                            backgroundColor: Colors.grey[300],
-                            child: const Icon(Icons.person, size: 40, color: Colors.white),
-                          ),
-                          const SizedBox(width: 20),
-                          Expanded(
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceAround,
-                              children: [
-                                _StatItem(postCount, "Submitted"),
-                                const _StatItem("1.6k", "Subscribe"),
-                                const _StatItem("380", "Connect"),
-                              ],
-                            ),
-                          )
-                        ],
-                      ),
-                      
-                      const SizedBox(height: 12),
-                      
-                      // --- UPDATED NAME & EMAIL SECTION ---
-                      Text(
-                        username, // Display Name
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-                      ),
-                      Text(
-                        email, // Display Email
-                        style: const TextStyle(color: Colors.black54, fontSize: 14),
-                      ),
-                      const SizedBox(height: 8),
-                      
-                      Text(
-                        bio, // Display Bio
-                        style: const TextStyle(color: Colors.grey),
-                      ),
-                      
-                      const SizedBox(height: 16),
-                      
-                      // Action Buttons
-                      Row(
-                        children: [
-                          Expanded(
-                            child: ElevatedButton(
-                              onPressed: () {},
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF6F35A5),
-                                foregroundColor: Colors.white,
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                elevation: 0,
-                              ),
-                              child: const Text("Edit Profile"),
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: OutlinedButton(
-                              onPressed: () {},
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: Colors.black,
-                                side: BorderSide(color: Colors.grey[300]!),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                              ),
-                              child: const Text("Share Profile"),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ];
-          },
-          body: Column(
-            children: [
-              const TabBar(
-                indicatorColor: Colors.black,
-                labelColor: Colors.black,
-                unselectedLabelColor: Colors.grey,
-                tabs: [
-                  Tab(icon: Icon(CupertinoIcons.square_grid_2x2)),
-                  Tab(icon: Icon(CupertinoIcons.person_crop_square)),
-                ],
-              ),
-              Expanded(
-                child: TabBarView(
-                  children: [
-                    GridView.builder(
-                      padding: const EdgeInsets.all(1),
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 3, crossAxisSpacing: 1, mainAxisSpacing: 1,
-                      ),
-                      itemCount: 15,
-                      itemBuilder: (context, index) => Container(
-                        color: Colors.grey[300],
-                        child: Icon(Icons.image, color: Colors.white.withOpacity(0.5)),
-                      ),
-                    ),
-                    const Center(child: Text("Tagged posts appear here")),
-                  ],
-                ),
-              ),
-            ],
+      child: ListTile(
+        leading: const Icon(Icons.location_on, color: Colors.black),
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+        trailing: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: _statusColor().withOpacity(0.2),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Text(
+            status,
+            style: TextStyle(
+                color: _statusColor(), fontWeight: FontWeight.bold),
           ),
         ),
       ),
@@ -209,17 +425,16 @@ class _UserProfileState extends State<UserProfile> {
   }
 }
 
-class _StatItem extends StatelessWidget {
-  final String count;
-  final String label;
-  const _StatItem(this.count, this.label);
+class _CompassSettingsIcon extends StatelessWidget {
+  const _CompassSettingsIcon();
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Text(count, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-        Text(label, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+    return Stack(
+      alignment: Alignment.center,
+      children: const [
+        Icon(Icons.settings, size: 26, color: Colors.black),
+        Icon(Icons.navigation, size: 14, color: Colors.black),
       ],
     );
   }

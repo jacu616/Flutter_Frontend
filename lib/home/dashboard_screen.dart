@@ -3,10 +3,11 @@ import 'package:flutter/material.dart';
 
 // Import your tabs
 import 'tabs/feed.dart';
-import 'tabs/search.dart';
+import 'tabs/join/search.dart';
 import 'tabs/profile.dart';
+import 'tabs/groups/group_list.dart'; // <--- Import the GroupList page
 
-// Import the Trip Details page
+// Import the Trip Details page (for the + button)
 import 'tabs/trip/trip_details.dart'; 
 
 class DashboardScreen extends StatefulWidget {
@@ -20,11 +21,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
   int _selectedIndex = 0;
 
   final List<Widget> _pages = const [
-    HomeFeed(),                  // 0
-    SearchGrid(),                // 1
-    SizedBox(),                  // 2 (Placeholder for the button logic)
-    Center(child: Text("Journey Page")), // 3
-    UserProfile(),               // 4
+    HomeFeed(),                  // 0: Home
+    SearchGrid(),                // 1: Explore
+    SizedBox(),                  // 2: Placeholder for the (+) button logic
+    GroupListPage(),             // 3: Journey (Replaced Placeholder)
+    UserProfile(),               // 4: Profile
   ];
 
   void _onItemTapped(int index) {
@@ -99,7 +100,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   height: 48,
                   width: 48,
                   decoration: const BoxDecoration(
-                    color: Color(0xFFFFC107),
+                    color: Color(0xFFFFC107), // Your Theme Yellow
                     shape: BoxShape.circle,
                   ),
                   child: const Icon(
@@ -113,7 +114,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               const BottomNavigationBarItem(
                 icon: Padding(
                   padding: EdgeInsets.only(bottom: 4),
-                  child: Icon(CupertinoIcons.doc_text, size: 26),
+                  child: Icon(CupertinoIcons.chat_bubble, size: 26),
                 ),
                 label: 'Journey',
               ),
