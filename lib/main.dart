@@ -1,24 +1,25 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_core/firebase_core.dart'; // <--- 1. Add Firebase Import
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'routes.dart';
 import 'theme/app_theme.dart';
-// import 'firebase_options.dart'; // <--- Uncomment this if you generated this file using 'flutterfire configure'
 
 Future<void> main() async {
-  // 1. Initialize binding (Required for both Firebase and SharedPreferences)
-  WidgetsFlutterBinding.ensureInitialized(); 
-  
-  // 2. Initialize Firebase (Fixes the [core/no-app] crash)
-  await Firebase.initializeApp(
-    // options: DefaultFirebaseOptions.currentPlatform, // <--- Add this argument if you are using firebase_options.dart
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize Supabase
+  await Supabase.initialize(
+    url:     'https://tqmrytzypqsuxjwdrihh.supabase.co',
+    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9'
+             '.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRxbXJ5dHp5cHFzdXhqd2RyaWhoIiwi'
+             'cm9sZSI6ImFub24iLCJpYXQiOjE3NzI5Mzk0MjIsImV4cCI6MjA4ODUxNTQyMn0'
+             '.SXDr2pA7Bt1fPy9Tg14nhCF0oGz9hQJe1G4_8nA-5tU',
   );
 
-  // 3. Check for the token (Your existing logic)
+  // Check for existing DRF token
   final prefs = await SharedPreferences.getInstance();
   final String? token = prefs.getString('auth_token');
-  
-  // 4. Decide the starting page
+
   final String initialRoute = (token != null) ? AppRoutes.home : AppRoutes.login;
 
   runApp(MyApp(initialRoute: initialRoute));
@@ -35,7 +36,7 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: 'SeeMe',
       theme: AppTheme.lightTheme,
-      initialRoute: initialRoute, 
+      initialRoute: initialRoute,
       routes: AppRoutes.routes,
     );
   }
