@@ -24,14 +24,12 @@ class _PostPageState extends State<PostPage> with WidgetsBindingObserver {
   Map<int, List<String>> tripImages = {};
   Map<int, TextEditingController> tripCaptions = {};
   final picker = ImagePicker();
-  DateTime currentDeviceDate = DateTime.now();
   Map<int, bool> uploadingImages = {};
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    currentDeviceDate = DateTime.now();
     fetchTrips();
   }
 
@@ -44,22 +42,45 @@ class _PostPageState extends State<PostPage> with WidgetsBindingObserver {
     super.dispose();
   }
 
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      _checkDeviceDateChange();
+  // ── Status badge helpers ──────────────────────────────────────────────────
+
+  Color _statusColor(String status) {
+    switch (status) {
+      case 'ongoing':
+        return const Color(0xFF2E7D32);
+      case 'upcoming':
+        return const Color(0xFF1565C0);
+      case 'completed':
+      default:
+        return const Color(0xFF6D6D6D);
     }
   }
 
-  Future<void> _checkDeviceDateChange() async {
-    final DateTime now = DateTime.now();
-    if (now.year != currentDeviceDate.year ||
-        now.month != currentDeviceDate.month ||
-        now.day != currentDeviceDate.day) {
-      setState(() => currentDeviceDate = now);
-      fetchTrips();
+  Color _statusBg(String status) {
+    switch (status) {
+      case 'ongoing':
+        return const Color(0xFFE8F5E9);
+      case 'upcoming':
+        return const Color(0xFFE3F2FD);
+      case 'completed':
+      default:
+        return const Color(0xFFF5F5F5);
     }
   }
+
+  String _statusLabel(String status) {
+    switch (status) {
+      case 'ongoing':
+        return 'Ongoing';
+      case 'upcoming':
+        return 'Upcoming';
+      case 'completed':
+      default:
+        return 'Completed';
+    }
+  }
+
+  // ── Data fetching ─────────────────────────────────────────────────────────
 
   Future<void> fetchTrips() async {
     setState(() => loading = true);
@@ -69,7 +90,7 @@ class _PostPageState extends State<PostPage> with WidgetsBindingObserver {
 
     try {
       final response = await http.get(
-        Uri.parse("$baseUrl/api/trips/completed/"),
+        Uri.parse("$baseUrl/api/trips/postable/"),
         headers: {
           "Authorization": "Token $token",
           "Content-Type": "application/json",
@@ -77,21 +98,13 @@ class _PostPageState extends State<PostPage> with WidgetsBindingObserver {
       );
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        List filteredTrips = [];
+        final data = jsonDecode(response.body) as List;
         for (var trip in data) {
-          DateTime endDate = DateTime.parse(trip["end_date"]);
-          if (endDate.isBefore(currentDeviceDate) ||
-              (endDate.year == currentDeviceDate.year &&
-                  endDate.month == currentDeviceDate.month &&
-                  endDate.day == currentDeviceDate.day)) {
-            filteredTrips.add(trip);
-            final id = trip["trip_id"] as int;
-            tripCaptions.putIfAbsent(id, () => TextEditingController());
-          }
+          final id = trip["trip_id"] as int;
+          tripCaptions.putIfAbsent(id, () => TextEditingController());
         }
         setState(() {
-          trips = filteredTrips;
+          trips   = data;
           loading = false;
         });
       }
@@ -101,14 +114,16 @@ class _PostPageState extends State<PostPage> with WidgetsBindingObserver {
     }
   }
 
+  // ── Image handling ────────────────────────────────────────────────────────
+
   Future<String?> uploadImageToSupabase(File imageFile, int tripId) async {
     try {
       final supabase = Supabase.instance.client;
-      final prefs = await SharedPreferences.getInstance();
-      final userId = prefs.getInt('user_id');
+      final prefs    = await SharedPreferences.getInstance();
+      final userId   = prefs.getInt('user_id');
       if (userId == null) return null;
 
-      final fileExt = imageFile.path.split('.').last;
+      final fileExt  = imageFile.path.split('.').last;
       final fileName = '${DateTime.now().millisecondsSinceEpoch}_$tripId.$fileExt';
       final filePath = '$userId/$fileName';
 
@@ -132,7 +147,7 @@ class _PostPageState extends State<PostPage> with WidgetsBindingObserver {
     setState(() => uploadingImages[tripId] = true);
 
     try {
-      final file = File(picked.path);
+      final file     = File(picked.path);
       final imageUrl = await uploadImageToSupabase(file, tripId);
 
       if (imageUrl != null && mounted) {
@@ -157,6 +172,18 @@ class _PostPageState extends State<PostPage> with WidgetsBindingObserver {
     }
   }
 
+  void removeImage(int tripId, int imageIndex) {
+    setState(() {
+      if (tripImages[tripId] != null &&
+          imageIndex < tripImages[tripId]!.length) {
+        tripImages[tripId]!.removeAt(imageIndex);
+        if (tripImages[tripId]!.isEmpty) tripImages.remove(tripId);
+      }
+    });
+  }
+
+  // ── Post creation ─────────────────────────────────────────────────────────
+
   Future<void> createPost(int tripId) async {
     if (tripImages[tripId] == null || tripImages[tripId]!.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -167,9 +194,9 @@ class _PostPageState extends State<PostPage> with WidgetsBindingObserver {
 
     setState(() => uploadingImages[tripId] = true);
 
-    final prefs  = await SharedPreferences.getInstance();
-    final token  = prefs.getString("auth_token");
-    final trip   = trips.firstWhere((t) => t["trip_id"] == tripId);
+    final prefs   = await SharedPreferences.getInstance();
+    final token   = prefs.getString("auth_token");
+    final trip    = trips.firstWhere((t) => t["trip_id"] == tripId);
     final caption = tripCaptions[tripId]?.text.trim() ?? '';
 
     try {
@@ -220,17 +247,7 @@ class _PostPageState extends State<PostPage> with WidgetsBindingObserver {
     }
   }
 
-  void removeImage(int tripId, int imageIndex) {
-    setState(() {
-      if (tripImages[tripId] != null &&
-          imageIndex < tripImages[tripId]!.length) {
-        tripImages[tripId]!.removeAt(imageIndex);
-        if (tripImages[tripId]!.isEmpty) {
-          tripImages.remove(tripId);
-        }
-      }
-    });
-  }
+  // ── UI ────────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -295,7 +312,7 @@ class _PostPageState extends State<PostPage> with WidgetsBindingObserver {
                       ),
                       const SizedBox(height: 24),
                       Text(
-                        "No completed trips found",
+                        "No trips found",
                         style: TextStyle(
                           fontSize: 22,
                           fontWeight: FontWeight.w600,
@@ -307,7 +324,7 @@ class _PostPageState extends State<PostPage> with WidgetsBindingObserver {
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 40),
                         child: Text(
-                          "Trips that have ended will appear here. Complete a trip to share your memories!",
+                          "Join or create a trip to start sharing your memories!",
                           style: TextStyle(
                             fontSize: 15,
                             color: Colors.grey[500],
@@ -325,6 +342,7 @@ class _PostPageState extends State<PostPage> with WidgetsBindingObserver {
                   itemBuilder: (context, index) {
                     final trip          = trips[index];
                     final tripId        = trip["trip_id"] as int;
+                    final tripStatus    = trip["status"] as String? ?? 'upcoming';
                     final isExpanded    = expandedTripId == tripId;
                     final isUploading   = uploadingImages[tripId] ?? false;
                     final tripImageList = tripImages[tripId] ?? [];
@@ -377,20 +395,50 @@ class _PostPageState extends State<PostPage> with WidgetsBindingObserver {
                                         crossAxisAlignment:
                                             CrossAxisAlignment.start,
                                         children: [
-                                          Text(
-                                            trip["destination"] ??
-                                                'Unknown Destination',
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w700,
-                                              fontSize: 18,
-                                              letterSpacing: -0.3,
-                                            ),
+                                          Row(
+                                            children: [
+                                              Flexible(
+                                                child: Text(
+                                                  trip["destination"] ??
+                                                      'Unknown Destination',
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.w700,
+                                                    fontSize: 17,
+                                                    letterSpacing: -0.3,
+                                                  ),
+                                                  overflow:
+                                                      TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                        horizontal: 8,
+                                                        vertical: 3),
+                                                decoration: BoxDecoration(
+                                                  color:
+                                                      _statusBg(tripStatus),
+                                                  borderRadius:
+                                                      BorderRadius.circular(20),
+                                                ),
+                                                child: Text(
+                                                  _statusLabel(tripStatus),
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: _statusColor(
+                                                        tripStatus),
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
                                           ),
                                           const SizedBox(height: 4),
                                           Row(
                                             children: [
                                               Icon(Icons.calendar_today,
-                                                  size: 14,
+                                                  size: 13,
                                                   color: Colors.grey[500]),
                                               const SizedBox(width: 4),
                                               Text(
