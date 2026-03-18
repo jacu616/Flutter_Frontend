@@ -1,249 +1,338 @@
-import 'dart:math' as math; // Required for the rotation angle
 import 'package:flutter/material.dart';
-import 'package:flutter_app/routes.dart'; // Make sure this path matches your project
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
+import 'package:flutter_app/config/config.dart';
+import 'package:flutter_app/routes.dart';
+import 'package:flutter_app/home/tabs/feed/post_card.dart';
 
-void main() => runApp(const MyApp());
+const String _base = AppConfig.baseUrl;
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class HomeFeed extends StatefulWidget {
+  const HomeFeed({Key? key}) : super(key: key);
 
   @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(useMaterial3: true, fontFamily: 'sans-serif'),
-      home: const HomeFeed(),
-    );
-  }
+  State<HomeFeed> createState() => _HomeFeedState();
 }
 
-class HomeFeed extends StatelessWidget {
-  const HomeFeed({super.key});
+class _HomeFeedState extends State<HomeFeed> {
+  final ScrollController _scrollController = ScrollController();
+
+  List<Map<String, dynamic>> _posts        = [];
+  int     _page          = 1;
+  bool    _hasMore       = true;
+  bool    _isLoading     = true;
+  bool    _isFetching    = false;
+  String? _error;
+  int     _unreadCount   = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFeed(reset: true);
+    _fetchUnreadCount();
+    _scrollController.addListener(() {
+      final pos        = _scrollController.position;
+      final nearBottom = pos.pixels >= pos.maxScrollExtent - 200;
+      if (nearBottom && _hasMore && !_isFetching && !_isLoading) {
+        _loadFeed();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadFeed({bool reset = false}) async {
+    if (reset) {
+      setState(() {
+        _isLoading = true;
+        _error     = null;
+        _page      = 1;
+        _hasMore   = true;
+      });
+    } else {
+      if (_isFetching || !_hasMore) return;
+      setState(() => _isFetching = true);
+    }
+
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('auth_token');
+      if (token == null) {
+        setState(() => _isLoading = false);
+        return;
+      }
+
+      final uri = Uri.parse('$_base/api/feed/').replace(
+        queryParameters: {'page': '$_page', 'per_page': '10'},
+      );
+      final res = await http.get(
+        uri,
+        headers: {'Authorization': 'Token $token'},
+      );
+
+      if (res.statusCode == 200) {
+        final data  = jsonDecode(res.body);
+        final posts = List<Map<String, dynamic>>.from(data['posts']);
+        setState(() {
+          if (reset) {
+            _posts = posts;
+          } else {
+            _posts.addAll(posts);
+          }
+          _hasMore = data['has_more'] ?? false;
+          _page++;
+          _error = null;
+        });
+      } else {
+        setState(() => _error = 'Failed to load feed. Please try again.');
+      }
+    } catch (e) {
+      setState(() => _error = 'Network error. Pull down to retry.');
+    } finally {
+      if (mounted) setState(() {
+        _isLoading  = false;
+        _isFetching = false;
+      });
+    }
+  }
+
+  Future<void> _fetchUnreadCount() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('auth_token');
+      if (token == null) return;
+
+      final res = await http.get(
+        Uri.parse('$_base/api/notifications/unread-count/'),
+        headers: {'Authorization': 'Token $token'},
+      );
+      if (res.statusCode == 200 && mounted) {
+        final data = jsonDecode(res.body);
+        setState(() => _unreadCount = data['count'] ?? 0);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _onRefresh() async {
+    await _loadFeed(reset: true);
+    await _fetchUnreadCount();
+  }
+
+  void _onAuthorTap(Map<String, dynamic> post) {
+    final authorId   = post['author_id'];
+    final authorName = post['author_name']?.toString() ?? 'User';
+    Navigator.pushNamed(
+      context,
+      AppRoutes.otherProfile,
+      arguments: {
+        'user_id':   authorId,
+        'user_name': authorName,
+      },
+    );
+  }
+
+  void _openNotifications() {
+    Navigator.pushNamed(context, AppRoutes.notifications).then((_) {
+      // Refresh badge count when returning from notifications
+      _fetchUnreadCount();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
-      body: CustomScrollView(
-        slivers: [
-          SliverAppBar(
-            centerTitle: true,
-            floating: true,
-            elevation: 0,
-            backgroundColor: const Color(0xFFF8F9FA),
-
-            // PLUS BUTTON (LEFT)
-            leading: IconButton(
-              icon: const Icon(Icons.add, color: Colors.black),
-              onPressed: () {
-                // Using the named route we just set up in routes.dart!
-                Navigator.pushNamed(context, AppRoutes.post);
-              },
-            ),
-
-            title: Image.asset('assets/logo.png', height: 120),
-
-            // NOTIFICATION BUTTON (RIGHT)
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.notifications_none, color: Colors.black),
-                onPressed: () {
-                  // Notification action
-                },
-              ),
-            ],
-          ),
-
-          SliverPadding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-            sliver: SliverList(
-              delegate: SliverChildListDelegate([
-                const PostCard(
-                  username: "Celine.photo",
-                  caption: "Capturing the serene beauty of the hills today.",
-                ),
-                const PostCard(
-                  username: "Wanggg_",
-                  caption: "Perspective is everything in architecture.",
-                ),
-              ]),
-            ),
-          ),
-        ],
+      body: SafeArea(
+        child: _buildBody(),
       ),
     );
   }
-}
 
-class PostCard extends StatelessWidget {
-  final String username;
-  final String caption;
+  Widget _buildBody() {
+    // ── Initial loading ───────────────────────────────────────────────
+    if (_isLoading) {
+      return const Center(
+        child: CircularProgressIndicator(color: Colors.black),
+      );
+    }
 
-  const PostCard({super.key, required this.username, required this.caption});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 24),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(32),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 20,
-            offset: const Offset(0, 10),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Row(
-              children: [
-                CircleAvatar(
-                  radius: 20,
-                  backgroundColor: Colors.indigo.shade100,
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(20),
-                    child: Image.network(
-                      'https://i.pravatar.cc/150?u=$username',
-                      errorBuilder: (context, error, stackTrace) =>
-                          Text(username[0]),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(username,
-                        style: const TextStyle(
-                            fontWeight: FontWeight.bold, fontSize: 14)),
-                    const Text('2h ago',
-                        style: TextStyle(color: Colors.grey, fontSize: 11)),
-                  ],
-                ),
-                const Spacer(),
-                const Icon(Icons.more_vert, color: Colors.grey),
-              ],
-            ),
-          ),
-
-          // Photo & Actions
-          Stack(
-            clipBehavior: Clip.none,
+    // ── Error with no posts ───────────────────────────────────────────
+    if (_error != null && _posts.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Container(
-                height: 350,
-                width: double.infinity,
-                margin: const EdgeInsets.symmetric(horizontal: 12),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(24),
-                  image: const DecorationImage(
-                    image: NetworkImage(
-                        'https://blog.rideally.com/wp-content/uploads/2022/05/Ooty.jpg'),
-                    fit: BoxFit.cover,
-                  ),
+              const Icon(Icons.wifi_off, size: 52, color: Colors.grey),
+              const SizedBox(height: 16),
+              Text(_error!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.grey, fontSize: 15)),
+              const SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: () => _loadFeed(reset: true),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.black,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
                 ),
-              ),
-
-              // Like Pill
-              Positioned(
-                bottom: -15,
-                left: 28,
-                child: _buildLikeButton(),
-              ),
-
-              // Tilted Share Button
-              Positioned(
-                bottom: -15,
-                right: 28,
-                child: _buildTiltedShareButton(),
+                child: const Text('Retry'),
               ),
             ],
-          ),
-
-          // Caption
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 30, 20, 20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                RichText(
-                  text: TextSpan(
-                    style: const TextStyle(
-                        color: Colors.black, fontSize: 14, height: 1.4),
-                    children: [
-                      TextSpan(
-                          text: '$username ',
-                          style: const TextStyle(fontWeight: FontWeight.bold)),
-                      TextSpan(text: caption),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 12),
-                const Text('View all 30 comments',
-                    style: TextStyle(color: Colors.grey, fontSize: 12)),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildLikeButton() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(25),
-        boxShadow: const [
-          BoxShadow(
-              color: Colors.black12,
-              blurRadius: 8,
-              offset: Offset(0, 4))
-        ],
-      ),
-      child: const Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.favorite, color: Colors.pink, size: 18),
-          SizedBox(width: 8),
-          Text("Like",
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTiltedShareButton() {
-    return Container(
-      height: 44,
-      width: 44,
-      decoration: const BoxDecoration(
-        color: Color.fromARGB(255, 255, 255, 255),
-        shape: BoxShape.circle,
-        boxShadow: [
-          BoxShadow(
-              color: Colors.black26,
-              blurRadius: 8,
-              offset: Offset(0, 4))
-        ],
-      ),
-      child: Center(
-        child: Transform.rotate(
-          angle: -math.pi / 6,
-          child: const Icon(
-            Icons.send_rounded,
-            color: Color.fromARGB(255, 0, 0, 0),
-            size: 20,
           ),
         ),
+      );
+    }
+
+    // ── Main feed with collapsing app bar ─────────────────────────────
+    return RefreshIndicator(
+      color:     Colors.black,
+      onRefresh: _onRefresh,
+      child: CustomScrollView(
+        controller: _scrollController,
+        physics:    const AlwaysScrollableScrollPhysics(),
+        slivers: [
+
+          // ── Collapsing App Bar ──────────────────────────────────────
+          SliverAppBar(
+            expandedHeight:            100,
+            collapsedHeight:           60,
+            pinned:                    true,
+            floating:                  false,
+            elevation:                 0,
+            backgroundColor:           const Color(0xFFF8F9FA),
+            automaticallyImplyLeading: false,
+            flexibleSpace: FlexibleSpaceBar(
+              collapseMode: CollapseMode.pin,
+              background: Container(
+                color:   const Color(0xFFF8F9FA),
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.add,
+                          color: Colors.black, size: 26),
+                      onPressed: () =>
+                          Navigator.pushNamed(context, AppRoutes.post),
+                    ),
+                    Expanded(
+                      child: Center(
+                        child: Image.asset(
+                          'assets/logo.png',
+                          fit: BoxFit.contain,
+                        ),
+                      ),
+                    ),
+                    // ── Bell with unread badge ──────────────────────
+                    Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.notifications_none,
+                              color: Colors.black, size: 26),
+                          onPressed: _openNotifications,
+                        ),
+                        if (_unreadCount > 0)
+                          Positioned(
+                            top:   6,
+                            right: 6,
+                            child: Container(
+                              padding: const EdgeInsets.all(3),
+                              decoration: const BoxDecoration(
+                                color: Colors.red,
+                                shape: BoxShape.circle,
+                              ),
+                              constraints: const BoxConstraints(
+                                  minWidth: 16, minHeight: 16),
+                              child: Text(
+                                _unreadCount > 99
+                                    ? '99+'
+                                    : '$_unreadCount',
+                                style: const TextStyle(
+                                  color:      Colors.white,
+                                  fontSize:   9,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+          // ── Empty state ─────────────────────────────────────────────
+          if (_posts.isEmpty)
+            const SliverFillRemaining(
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.explore_outlined,
+                        size: 64, color: Colors.grey),
+                    SizedBox(height: 16),
+                    Text('No posts yet',
+                        style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.grey)),
+                    SizedBox(height: 8),
+                    Text('Follow people to see their travel posts here',
+                        style: TextStyle(color: Colors.grey, fontSize: 14)),
+                  ],
+                ),
+              ),
+            )
+
+          // ── Posts list ──────────────────────────────────────────────
+          else
+            SliverList(
+              delegate: SliverChildBuilderDelegate(
+                (context, index) {
+                  if (index == _posts.length) {
+                    if (_isFetching) {
+                      return const Padding(
+                        padding: EdgeInsets.all(20),
+                        child: Center(
+                          child: CircularProgressIndicator(
+                              color: Colors.black, strokeWidth: 2),
+                        ),
+                      );
+                    }
+                    if (!_hasMore) {
+                      return const Padding(
+                        padding: EdgeInsets.all(24),
+                        child: Center(
+                          child: Text("You're all caught up! ✈️",
+                              style: TextStyle(
+                                  color: Colors.grey, fontSize: 13)),
+                        ),
+                      );
+                    }
+                    return const SizedBox.shrink();
+                  }
+
+                  final post = _posts[index];
+                  return PostCard(
+                    post:        post,
+                    onAuthorTap: () => _onAuthorTap(post),
+                  );
+                },
+                childCount: _posts.length + 1,
+              ),
+            ),
+        ],
       ),
     );
   }

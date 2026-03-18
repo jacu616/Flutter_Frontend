@@ -6,7 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'package:flutter_app/config/config.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:flutter_app/routes.dart'; // Make sure this path matches your project
+import 'package:flutter_app/routes.dart';
 
 const String baseUrl = AppConfig.baseUrl;
 
@@ -21,48 +21,42 @@ class _PostPageState extends State<PostPage> with WidgetsBindingObserver {
   List trips = [];
   bool loading = true;
   int? expandedTripId;
-  Map<int, List<String>> tripImages = {}; // Stores images per trip
+  Map<int, List<String>> tripImages = {};
+  Map<int, TextEditingController> tripCaptions = {};
   final picker = ImagePicker();
-  DateTime currentDeviceDate = DateTime.now(); // Tracks device date internally
+  DateTime currentDeviceDate = DateTime.now();
   Map<int, bool> uploadingImages = {};
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this); // Listen to app lifecycle changes
-    currentDeviceDate = DateTime.now(); // Get current device date
+    WidgetsBinding.instance.addObserver(this);
+    currentDeviceDate = DateTime.now();
     fetchTrips();
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    for (var controller in tripCaptions.values) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    // When app comes back to foreground, check if device date changed
     if (state == AppLifecycleState.resumed) {
       _checkDeviceDateChange();
     }
   }
 
-  // Check if device date has changed
   Future<void> _checkDeviceDateChange() async {
     final DateTime now = DateTime.now();
-    
-    // Compare dates (ignoring time)
     if (now.year != currentDeviceDate.year ||
         now.month != currentDeviceDate.month ||
         now.day != currentDeviceDate.day) {
-      
-      // Date has changed - update and refresh trips silently
-      setState(() {
-        currentDeviceDate = now;
-      });
-      
-      // Refresh trips with new date (no UI notification)
+      setState(() => currentDeviceDate = now);
       fetchTrips();
     }
   }
@@ -76,7 +70,10 @@ class _PostPageState extends State<PostPage> with WidgetsBindingObserver {
     try {
       final response = await http.get(
         Uri.parse("$baseUrl/api/trips/completed/"),
-        headers: {"Authorization": "Token $token", "Content-Type": "application/json"},
+        headers: {
+          "Authorization": "Token $token",
+          "Content-Type": "application/json",
+        },
       );
 
       if (response.statusCode == 200) {
@@ -84,12 +81,13 @@ class _PostPageState extends State<PostPage> with WidgetsBindingObserver {
         List filteredTrips = [];
         for (var trip in data) {
           DateTime endDate = DateTime.parse(trip["end_date"]);
-          // Compare dates (ignoring time) - show trips completed on or before current device date
-          if (endDate.isBefore(currentDeviceDate) || 
+          if (endDate.isBefore(currentDeviceDate) ||
               (endDate.year == currentDeviceDate.year &&
-               endDate.month == currentDeviceDate.month &&
-               endDate.day == currentDeviceDate.day)) {
+                  endDate.month == currentDeviceDate.month &&
+                  endDate.day == currentDeviceDate.day)) {
             filteredTrips.add(trip);
+            final id = trip["trip_id"] as int;
+            tripCaptions.putIfAbsent(id, () => TextEditingController());
           }
         }
         setState(() {
@@ -108,24 +106,19 @@ class _PostPageState extends State<PostPage> with WidgetsBindingObserver {
       final supabase = Supabase.instance.client;
       final prefs = await SharedPreferences.getInstance();
       final userId = prefs.getInt('user_id');
-      
       if (userId == null) return null;
 
-      // Generate a unique filename
       final fileExt = imageFile.path.split('.').last;
       final fileName = '${DateTime.now().millisecondsSinceEpoch}_$tripId.$fileExt';
       final filePath = '$userId/$fileName';
 
-      // Upload to Supabase bucket
       await supabase.storage.from('post-image').upload(
         filePath,
         imageFile,
         fileOptions: const FileOptions(cacheControl: '3600'),
       );
 
-      // Get public URL
-      final publicUrl = supabase.storage.from('post-image').getPublicUrl(filePath);
-      return publicUrl;
+      return supabase.storage.from('post-image').getPublicUrl(filePath);
     } catch (e) {
       debugPrint('Error uploading to Supabase: $e');
       return null;
@@ -135,18 +128,15 @@ class _PostPageState extends State<PostPage> with WidgetsBindingObserver {
   Future<void> pickImage(int tripId) async {
     final picked = await picker.pickImage(source: ImageSource.gallery);
     if (picked == null) return;
-    
-    setState(() {
-      uploadingImages[tripId] = true;
-    });
+
+    setState(() => uploadingImages[tripId] = true);
 
     try {
       final file = File(picked.path);
       final imageUrl = await uploadImageToSupabase(file, tripId);
-      
+
       if (imageUrl != null && mounted) {
         setState(() {
-          // Initialize list if needed and add the image
           tripImages.putIfAbsent(tripId, () => []);
           tripImages[tripId]!.add(imageUrl);
         });
@@ -163,16 +153,11 @@ class _PostPageState extends State<PostPage> with WidgetsBindingObserver {
         );
       }
     } finally {
-      if (mounted) {
-        setState(() {
-          uploadingImages[tripId] = false;
-        });
-      }
+      if (mounted) setState(() => uploadingImages[tripId] = false);
     }
   }
 
   Future<void> createPost(int tripId) async {
-    // Check if there are images for this trip
     if (tripImages[tripId] == null || tripImages[tripId]!.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Please select at least one image")),
@@ -180,43 +165,42 @@ class _PostPageState extends State<PostPage> with WidgetsBindingObserver {
       return;
     }
 
-    setState(() {
-      uploadingImages[tripId] = true;
-    });
+    setState(() => uploadingImages[tripId] = true);
 
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString("auth_token");
-    
-    // Find the trip details
-    final trip = trips.firstWhere((t) => t["trip_id"] == tripId);
+    final prefs  = await SharedPreferences.getInstance();
+    final token  = prefs.getString("auth_token");
+    final trip   = trips.firstWhere((t) => t["trip_id"] == tripId);
+    final caption = tripCaptions[tripId]?.text.trim() ?? '';
 
     try {
       final response = await http.post(
         Uri.parse("$baseUrl/api/posts/create/"),
         headers: {
-          "Content-Type": "application/json",
-          "Authorization": "Token $token"
+          "Content-Type":  "application/json",
+          "Authorization": "Token $token",
         },
         body: jsonEncode({
-          "trip_id": tripId,
-          "images": tripImages[tripId],
+          "trip_id":     tripId,
+          "image_urls":  tripImages[tripId],
+          "caption":     caption,
           "destination": trip["destination"],
-          "start_date": trip["start_date"],
-          "end_date": trip["end_date"],
+          "location":    trip["destination"],
         }),
       );
 
-      if (response.statusCode == 200 && mounted) {
-        // Clear images for this trip after successful post
+      if (response.statusCode == 201 && mounted) {
         setState(() {
           tripImages.remove(tripId);
+          tripCaptions[tripId]?.clear();
         });
-        
+
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Post created successfully")),
+          const SnackBar(
+            content: Text("Post created successfully!"),
+            backgroundColor: Colors.green,
+          ),
         );
-        
-        // Navigate to profile and refresh it using named routes
+
         Navigator.pushNamedAndRemoveUntil(
           context,
           AppRoutes.profile,
@@ -232,17 +216,14 @@ class _PostPageState extends State<PostPage> with WidgetsBindingObserver {
         );
       }
     } finally {
-      if (mounted) {
-        setState(() {
-          uploadingImages[tripId] = false;
-        });
-      }
+      if (mounted) setState(() => uploadingImages[tripId] = false);
     }
   }
 
   void removeImage(int tripId, int imageIndex) {
     setState(() {
-      if (tripImages[tripId] != null && imageIndex < tripImages[tripId]!.length) {
+      if (tripImages[tripId] != null &&
+          imageIndex < tripImages[tripId]!.length) {
         tripImages[tripId]!.removeAt(imageIndex);
         if (tripImages[tripId]!.isEmpty) {
           tripImages.remove(tripId);
@@ -270,10 +251,7 @@ class _PostPageState extends State<PostPage> with WidgetsBindingObserver {
         foregroundColor: Colors.black,
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(1),
-          child: Container(
-            height: 1,
-            color: Colors.grey[200],
-          ),
+          child: Container(height: 1, color: Colors.grey[200]),
         ),
       ),
       body: loading
@@ -345,12 +323,12 @@ class _PostPageState extends State<PostPage> with WidgetsBindingObserver {
                   padding: const EdgeInsets.all(16),
                   itemCount: trips.length,
                   itemBuilder: (context, index) {
-                    final trip = trips[index];
-                    final tripId = trip["trip_id"];
-                    final isExpanded = expandedTripId == tripId;
-                    final isUploading = uploadingImages[tripId] ?? false;
+                    final trip          = trips[index];
+                    final tripId        = trip["trip_id"] as int;
+                    final isExpanded    = expandedTripId == tripId;
+                    final isUploading   = uploadingImages[tripId] ?? false;
                     final tripImageList = tripImages[tripId] ?? [];
-                    
+
                     return Container(
                       margin: const EdgeInsets.only(bottom: 16),
                       decoration: BoxDecoration(
@@ -366,19 +344,18 @@ class _PostPageState extends State<PostPage> with WidgetsBindingObserver {
                       ),
                       child: Column(
                         children: [
-                          // Trip Header
+                          // ── Trip Header ──────────────────────────────────
                           Material(
                             color: Colors.transparent,
                             child: InkWell(
-                              onTap: () => setState(() => expandedTripId = isExpanded ? null : tripId),
+                              onTap: () => setState(() =>
+                                  expandedTripId = isExpanded ? null : tripId),
                               borderRadius: const BorderRadius.vertical(
-                                top: Radius.circular(20),
-                              ),
+                                  top: Radius.circular(20)),
                               child: Container(
                                 padding: const EdgeInsets.all(16),
                                 child: Row(
                                   children: [
-                                    // Destination Icon
                                     Container(
                                       width: 50,
                                       height: 50,
@@ -391,21 +368,18 @@ class _PostPageState extends State<PostPage> with WidgetsBindingObserver {
                                         ),
                                         borderRadius: BorderRadius.circular(15),
                                       ),
-                                      child: const Icon(
-                                        Icons.place,
-                                        color: Colors.white,
-                                        size: 24,
-                                      ),
+                                      child: const Icon(Icons.place,
+                                          color: Colors.white, size: 24),
                                     ),
                                     const SizedBox(width: 16),
-                                    
-                                    // Trip Info
                                     Expanded(
                                       child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
                                         children: [
                                           Text(
-                                            trip["destination"] ?? 'Unknown Destination',
+                                            trip["destination"] ??
+                                                'Unknown Destination',
                                             style: const TextStyle(
                                               fontWeight: FontWeight.w700,
                                               fontSize: 18,
@@ -415,11 +389,9 @@ class _PostPageState extends State<PostPage> with WidgetsBindingObserver {
                                           const SizedBox(height: 4),
                                           Row(
                                             children: [
-                                              Icon(
-                                                Icons.calendar_today,
-                                                size: 14,
-                                                color: Colors.grey[500],
-                                              ),
+                                              Icon(Icons.calendar_today,
+                                                  size: 14,
+                                                  color: Colors.grey[500]),
                                               const SizedBox(width: 4),
                                               Text(
                                                 "${trip["start_date"]} → ${trip["end_date"]}",
@@ -434,8 +406,6 @@ class _PostPageState extends State<PostPage> with WidgetsBindingObserver {
                                         ],
                                       ),
                                     ),
-                                    
-                                    // Expand/Collapse Icon
                                     Container(
                                       width: 36,
                                       height: 36,
@@ -444,7 +414,9 @@ class _PostPageState extends State<PostPage> with WidgetsBindingObserver {
                                         borderRadius: BorderRadius.circular(10),
                                       ),
                                       child: Icon(
-                                        isExpanded ? Icons.keyboard_arrow_up : Icons.keyboard_arrow_down,
+                                        isExpanded
+                                            ? Icons.keyboard_arrow_up
+                                            : Icons.keyboard_arrow_down,
                                         color: Colors.grey[800],
                                         size: 22,
                                       ),
@@ -454,39 +426,39 @@ class _PostPageState extends State<PostPage> with WidgetsBindingObserver {
                               ),
                             ),
                           ),
-                          
-                          // Expanded Content
+
+                          // ── Expanded Content ─────────────────────────────
                           if (isExpanded)
                             Container(
                               padding: const EdgeInsets.all(16),
                               decoration: BoxDecoration(
                                 border: Border(
                                   top: BorderSide(
-                                    color: Colors.grey[200]!,
-                                    width: 1,
-                                  ),
+                                      color: Colors.grey[200]!, width: 1),
                                 ),
                               ),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  // Image Section Header
+                                  // ── Image Section Header ─────────────────
                                   Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.spaceBetween,
                                     children: [
                                       Row(
                                         children: [
                                           Container(
                                             padding: const EdgeInsets.all(8),
                                             decoration: BoxDecoration(
-                                              color: const Color(0xFF2B2B2B).withOpacity(0.05),
-                                              borderRadius: BorderRadius.circular(10),
+                                              color: const Color(0xFF2B2B2B)
+                                                  .withOpacity(0.05),
+                                              borderRadius:
+                                                  BorderRadius.circular(10),
                                             ),
                                             child: const Icon(
-                                              Icons.photo_library,
-                                              size: 18,
-                                              color: Color(0xFF2B2B2B),
-                                            ),
+                                                Icons.photo_library,
+                                                size: 18,
+                                                color: Color(0xFF2B2B2B)),
                                           ),
                                           const SizedBox(width: 12),
                                           Text(
@@ -499,14 +471,16 @@ class _PostPageState extends State<PostPage> with WidgetsBindingObserver {
                                           ),
                                           if (tripImageList.isNotEmpty)
                                             Container(
-                                              margin: const EdgeInsets.only(left: 8),
-                                              padding: const EdgeInsets.symmetric(
-                                                horizontal: 8,
-                                                vertical: 4,
-                                              ),
+                                              margin: const EdgeInsets.only(
+                                                  left: 8),
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                      horizontal: 8,
+                                                      vertical: 4),
                                               decoration: BoxDecoration(
                                                 color: const Color(0xFF2B2B2B),
-                                                borderRadius: BorderRadius.circular(12),
+                                                borderRadius:
+                                                    BorderRadius.circular(12),
                                               ),
                                               child: Text(
                                                 '${tripImageList.length}',
@@ -523,7 +497,8 @@ class _PostPageState extends State<PostPage> with WidgetsBindingObserver {
                                         Container(
                                           decoration: BoxDecoration(
                                             color: const Color(0xFF2B2B2B),
-                                            borderRadius: BorderRadius.circular(12),
+                                            borderRadius:
+                                                BorderRadius.circular(12),
                                           ),
                                           child: IconButton(
                                             onPressed: () => pickImage(tripId),
@@ -540,7 +515,8 @@ class _PostPageState extends State<PostPage> with WidgetsBindingObserver {
                                           height: 40,
                                           decoration: BoxDecoration(
                                             color: Colors.grey[100],
-                                            borderRadius: BorderRadius.circular(12),
+                                            borderRadius:
+                                                BorderRadius.circular(12),
                                           ),
                                           child: const Center(
                                             child: SizedBox(
@@ -555,14 +531,17 @@ class _PostPageState extends State<PostPage> with WidgetsBindingObserver {
                                         ),
                                     ],
                                   ),
+
                                   const SizedBox(height: 16),
-                                  
-                                  // Image Grid
+
+                                  // ── Image Grid ───────────────────────────
                                   if (tripImageList.isNotEmpty)
                                     GridView.builder(
                                       shrinkWrap: true,
-                                      physics: const NeverScrollableScrollPhysics(),
-                                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                      physics:
+                                          const NeverScrollableScrollPhysics(),
+                                      gridDelegate:
+                                          const SliverGridDelegateWithFixedCrossAxisCount(
                                         crossAxisCount: 3,
                                         crossAxisSpacing: 8,
                                         mainAxisSpacing: 8,
@@ -573,19 +552,20 @@ class _PostPageState extends State<PostPage> with WidgetsBindingObserver {
                                         return Stack(
                                           children: [
                                             ClipRRect(
-                                              borderRadius: BorderRadius.circular(12),
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
                                               child: Image.network(
                                                 tripImageList[i],
                                                 fit: BoxFit.cover,
                                                 width: double.infinity,
                                                 height: double.infinity,
-                                                errorBuilder: (_, __, ___) => Container(
+                                                errorBuilder: (_, __, ___) =>
+                                                    Container(
                                                   color: Colors.grey[100],
                                                   child: const Icon(
-                                                    Icons.broken_image,
-                                                    color: Colors.grey,
-                                                    size: 24,
-                                                  ),
+                                                      Icons.broken_image,
+                                                      color: Colors.grey,
+                                                      size: 24),
                                                 ),
                                               ),
                                             ),
@@ -593,10 +573,13 @@ class _PostPageState extends State<PostPage> with WidgetsBindingObserver {
                                               top: 4,
                                               right: 4,
                                               child: GestureDetector(
-                                                onTap: () => removeImage(tripId, i),
+                                                onTap: () =>
+                                                    removeImage(tripId, i),
                                                 child: Container(
-                                                  padding: const EdgeInsets.all(4),
-                                                  decoration: const BoxDecoration(
+                                                  padding:
+                                                      const EdgeInsets.all(4),
+                                                  decoration:
+                                                      const BoxDecoration(
                                                     color: Colors.red,
                                                     shape: BoxShape.circle,
                                                     boxShadow: [
@@ -608,10 +591,9 @@ class _PostPageState extends State<PostPage> with WidgetsBindingObserver {
                                                     ],
                                                   ),
                                                   child: const Icon(
-                                                    Icons.close,
-                                                    size: 12,
-                                                    color: Colors.white,
-                                                  ),
+                                                      Icons.close,
+                                                      size: 12,
+                                                      color: Colors.white),
                                                 ),
                                               ),
                                             ),
@@ -624,21 +606,22 @@ class _PostPageState extends State<PostPage> with WidgetsBindingObserver {
                                       height: 100,
                                       decoration: BoxDecoration(
                                         color: Colors.grey[50],
-                                        borderRadius: BorderRadius.circular(16),
+                                        borderRadius:
+                                            BorderRadius.circular(16),
                                         border: Border.all(
-                                          color: Colors.grey[200]!,
-                                          width: 2,
-                                        ),
+                                            color: Colors.grey[200]!,
+                                            width: 2),
                                       ),
                                       child: Center(
                                         child: Column(
-                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.center,
                                           children: [
                                             Icon(
-                                              Icons.add_photo_alternate_outlined,
-                                              size: 30,
-                                              color: Colors.grey[400],
-                                            ),
+                                                Icons
+                                                    .add_photo_alternate_outlined,
+                                                size: 30,
+                                                color: Colors.grey[400]),
                                             const SizedBox(height: 4),
                                             Text(
                                               'Tap + to add images',
@@ -652,18 +635,58 @@ class _PostPageState extends State<PostPage> with WidgetsBindingObserver {
                                         ),
                                       ),
                                     ),
-                                  
-                                  const SizedBox(height: 20),
-                                  
-                                  // Post Button
+
+                                  const SizedBox(height: 16),
+
+                                  // ── Caption Field ────────────────────────
+                                  TextField(
+                                    controller: tripCaptions[tripId],
+                                    maxLines: 3,
+                                    maxLength: 300,
+                                    decoration: InputDecoration(
+                                      hintText:
+                                          'Write a caption for your trip...',
+                                      hintStyle: TextStyle(
+                                          color: Colors.grey[400],
+                                          fontSize: 14),
+                                      filled: true,
+                                      fillColor: Colors.grey[50],
+                                      border: OutlineInputBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(14),
+                                        borderSide: BorderSide(
+                                            color: Colors.grey[200]!),
+                                      ),
+                                      enabledBorder: OutlineInputBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(14),
+                                        borderSide: BorderSide(
+                                            color: Colors.grey[200]!),
+                                      ),
+                                      focusedBorder: OutlineInputBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(14),
+                                        borderSide: const BorderSide(
+                                            color: Color(0xFF2B2B2B)),
+                                      ),
+                                      contentPadding:
+                                          const EdgeInsets.all(14),
+                                    ),
+                                  ),
+
+                                  const SizedBox(height: 16),
+
+                                  // ── Post Button ──────────────────────────
                                   Row(
                                     children: [
                                       Expanded(
                                         child: Container(
                                           height: 56,
                                           decoration: BoxDecoration(
-                                            borderRadius: BorderRadius.circular(16),
-                                            gradient: (isUploading || tripImageList.isEmpty)
+                                            borderRadius:
+                                                BorderRadius.circular(16),
+                                            gradient: (isUploading ||
+                                                    tripImageList.isEmpty)
                                                 ? null
                                                 : const LinearGradient(
                                                     colors: [
@@ -671,37 +694,45 @@ class _PostPageState extends State<PostPage> with WidgetsBindingObserver {
                                                       Color(0xFF4A4A4A),
                                                     ],
                                                   ),
-                                            color: (isUploading || tripImageList.isEmpty)
+                                            color: (isUploading ||
+                                                    tripImageList.isEmpty)
                                                 ? Colors.grey[200]
                                                 : null,
                                           ),
                                           child: ElevatedButton.icon(
-                                            onPressed: isUploading || tripImageList.isEmpty
+                                            onPressed: isUploading ||
+                                                    tripImageList.isEmpty
                                                 ? null
                                                 : () => createPost(tripId),
                                             icon: Icon(
                                               Icons.send,
-                                              color: (isUploading || tripImageList.isEmpty)
+                                              color: (isUploading ||
+                                                      tripImageList.isEmpty)
                                                   ? Colors.grey[500]
                                                   : Colors.white,
                                               size: 20,
                                             ),
                                             label: Text(
-                                              isUploading ? 'Posting...' : 'Share Memories',
+                                              isUploading
+                                                  ? 'Posting...'
+                                                  : 'Share Memories',
                                               style: TextStyle(
                                                 fontWeight: FontWeight.w600,
                                                 fontSize: 16,
-                                                color: (isUploading || tripImageList.isEmpty)
+                                                color: (isUploading ||
+                                                        tripImageList.isEmpty)
                                                     ? Colors.grey[500]
                                                     : Colors.white,
                                               ),
                                             ),
                                             style: ElevatedButton.styleFrom(
-                                              backgroundColor: Colors.transparent,
+                                              backgroundColor:
+                                                  Colors.transparent,
                                               shadowColor: Colors.transparent,
                                               elevation: 0,
                                               shape: RoundedRectangleBorder(
-                                                borderRadius: BorderRadius.circular(16),
+                                                borderRadius:
+                                                    BorderRadius.circular(16),
                                               ),
                                             ),
                                           ),

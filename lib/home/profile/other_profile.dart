@@ -192,10 +192,12 @@ class _OtherUserProfilePageState extends State<OtherUserProfilePage>
               }
             }
 
-            if (tripDestination == 'Unknown Trip' && post['trip_destination'] != null) {
+            if (tripDestination == 'Unknown Trip' &&
+                post['trip_destination'] != null) {
               tripDestination = post['trip_destination'].toString();
             }
-            if (tripDestination == 'Unknown Trip' && post['destination'] != null) {
+            if (tripDestination == 'Unknown Trip' &&
+                post['destination'] != null) {
               tripDestination = post['destination'].toString();
             }
 
@@ -223,13 +225,15 @@ class _OtherUserProfilePageState extends State<OtherUserProfilePage>
           posts          = rawPosts;
           trips          = data['trips'] ?? [];
           groupedPosts   = grouped;
-          _isFollowing   = data['is_following']   ?? false;
-          _isOwnProfile  = data['is_own_profile']  ?? false;
+          _isFollowing   = data['is_following']  ?? false;
+          _isOwnProfile  = data['is_own_profile'] ?? false;
         });
       } else {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed to load profile: ${response.statusCode}')),
+            SnackBar(
+                content: Text(
+                    'Failed to load profile: ${response.statusCode}')),
           );
         }
       }
@@ -256,7 +260,8 @@ class _OtherUserProfilePageState extends State<OtherUserProfilePage>
         final data = jsonDecode(response.body);
         setState(() {
           _isFollowing  = data['following'];
-          followerCount = _isFollowing ? followerCount + 1 : followerCount - 1;
+          followerCount =
+              _isFollowing ? followerCount + 1 : followerCount - 1;
         });
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -279,12 +284,10 @@ class _OtherUserProfilePageState extends State<OtherUserProfilePage>
   // ── Followers / Following ─────────────────────────────────────────────────
 
   Future<void> _showFollowersList() async {
-    if (_currentUserId == null) return;
     await _fetchAndShowUsers('followers', 'Followers');
   }
 
   Future<void> _showFollowingList() async {
-    if (_currentUserId == null) return;
     await _fetchAndShowUsers('following', 'Following');
   }
 
@@ -301,7 +304,8 @@ class _OtherUserProfilePageState extends State<OtherUserProfilePage>
 
     try {
       final response = await http.get(
-        Uri.parse('${AppConfig.baseUrl}/api/profile/${widget.userId}/$type/'),
+        Uri.parse(
+            '${AppConfig.baseUrl}/api/profile/${widget.userId}/$type/'),
         headers: {
           'Content-Type':  'application/json',
           'Authorization': 'Token $token',
@@ -315,11 +319,9 @@ class _OtherUserProfilePageState extends State<OtherUserProfilePage>
         if (context.mounted) _showUserBottomSheet(title, users);
       } else {
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-                content: Text('Failed to load $title'),
-                backgroundColor: Colors.red),
-          );
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text('Failed to load $title'),
+              backgroundColor: Colors.red));
         }
       }
     } catch (e) {
@@ -328,13 +330,19 @@ class _OtherUserProfilePageState extends State<OtherUserProfilePage>
     }
   }
 
+  // ── CHANGE 1: No email, count badge, larger avatars, separators ───────────
   void _showUserBottomSheet(String title, List<dynamic> users) {
+    // Deduplicate by id
+    final Map<int, dynamic> unique = {};
+    for (var u in users) unique[u['id']] = u;
+    final deduped = unique.values.toList();
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => Container(
-        height: MediaQuery.of(context).size.height * 0.7,
+        height: MediaQuery.of(context).size.height * 0.75,
         decoration: const BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
@@ -349,15 +357,34 @@ class _OtherUserProfilePageState extends State<OtherUserProfilePage>
                   color: Colors.grey[300],
                   borderRadius: BorderRadius.circular(2)),
             ),
+            // Title + count badge
             Padding(
               padding: const EdgeInsets.all(16),
-              child: Text(title,
-                  style: const TextStyle(
-                      fontSize: 20, fontWeight: FontWeight.bold)),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(title,
+                      style: const TextStyle(
+                          fontSize: 20, fontWeight: FontWeight.bold)),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                        color: Colors.black,
+                        borderRadius: BorderRadius.circular(20)),
+                    child: Text('${deduped.length}',
+                        style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white)),
+                  ),
+                ],
+              ),
             ),
             const Divider(height: 1),
             Expanded(
-              child: users.isEmpty
+              child: deduped.isEmpty
                   ? Center(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -366,7 +393,7 @@ class _OtherUserProfilePageState extends State<OtherUserProfilePage>
                               title == 'Followers'
                                   ? Icons.people_outline
                                   : Icons.person_outline,
-                              size: 48,
+                              size: 64,
                               color: Colors.grey[400]),
                           const SizedBox(height: 16),
                           Text(
@@ -378,48 +405,78 @@ class _OtherUserProfilePageState extends State<OtherUserProfilePage>
                         ],
                       ),
                     )
-                  : ListView.builder(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      itemCount: users.length,
+                  : ListView.separated(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      itemCount: deduped.length,
+                      separatorBuilder: (_, __) => const Divider(
+                          height: 1,
+                          indent: 80,
+                          endIndent: 16,
+                          color: Color(0xFFF0F0F0)),
                       itemBuilder: (context, index) {
-                        final user = users[index];
+                        final user = deduped[index];
 
-                        // Hide the current user from the list
+                        // Hide current user from the list
                         if (user['id'] == _currentUserId) {
                           return const SizedBox.shrink();
                         }
 
-                        return ListTile(
-                          leading: CircleAvatar(
-                            radius: 24,
-                            backgroundColor: Colors.grey[200],
-                            backgroundImage: user['profile_picture'] != null &&
-                                    user['profile_picture'].toString().isNotEmpty
-                                ? NetworkImage(user['profile_picture'])
-                                : null,
-                            child: user['profile_picture'] == null ||
-                                    user['profile_picture'].toString().isEmpty
-                                ? const Icon(Icons.person, color: Colors.grey)
-                                : null,
-                          ),
-                          title: Text(user['username'] ?? 'Unknown User',
-                              style:
-                                  const TextStyle(fontWeight: FontWeight.w600)),
-                          subtitle: Text(user['email'] ?? '',
-                              style: TextStyle(
-                                  color: Colors.grey[600], fontSize: 13)),
-                          onTap: () {
-                            Navigator.pop(context);
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => OtherUserProfilePage(
-                                  userId:   user['id'],
-                                  userName: user['username'] ?? 'User',
-                                ),
+                        return Container(
+                          margin:
+                              const EdgeInsets.symmetric(vertical: 4),
+                          child: ListTile(
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 8),
+                            leading: CircleAvatar(
+                              radius: 32,
+                              backgroundColor: Colors.grey[200],
+                              backgroundImage: user['profile_picture'] !=
+                                          null &&
+                                      user['profile_picture']
+                                          .toString()
+                                          .isNotEmpty
+                                  ? NetworkImage(user['profile_picture'])
+                                  : null,
+                              child: user['profile_picture'] == null ||
+                                      user['profile_picture']
+                                          .toString()
+                                          .isEmpty
+                                  ? Icon(Icons.person,
+                                      size: 32, color: Colors.grey[400])
+                                  : null,
+                            ),
+                            title: Padding(
+                              padding: const EdgeInsets.only(bottom: 4),
+                              child: Text(
+                                user['username'] ?? 'Unknown User',
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 16),
                               ),
-                            );
-                          },
+                            ),
+                            // ← NO subtitle / email
+                            trailing: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                  color: Colors.grey[100],
+                                  shape: BoxShape.circle),
+                              child: const Icon(Icons.arrow_forward_ios,
+                                  size: 14, color: Colors.grey),
+                            ),
+                            onTap: () {
+                              Navigator.pop(context);
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) =>
+                                      OtherUserProfilePage(
+                                    userId:   user['id'],
+                                    userName: user['username'] ?? 'User',
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
                         );
                       },
                     ),
@@ -433,7 +490,8 @@ class _OtherUserProfilePageState extends State<OtherUserProfilePage>
   // ── Trip Card ─────────────────────────────────────────────────────────────
 
   Widget _buildTripCard(Map trip) {
-    final tripStatus = (trip['status'] as String? ?? 'upcoming').toLowerCase();
+    final tripStatus =
+        (trip['status'] as String? ?? 'upcoming').toLowerCase();
 
     Color    statusColor;
     String   statusLabel;
@@ -465,11 +523,6 @@ class _OtherUserProfilePageState extends State<OtherUserProfilePage>
         borderRadius: BorderRadius.circular(15),
         onTap: () {
           if (tripStatus == 'upcoming') {
-            // Build a fully null-safe, String-keyed arguments map.
-            // DO NOT spread the raw trip map — jsonDecode returns
-            // Map<dynamic,dynamic> and any null value cast to String
-            // causes "null is not a subtype of String" red screen.
-            // Instead, extract every field explicitly with a fallback.
             final int tripId = trip['id'] is int
                 ? trip['id'] as int
                 : int.tryParse(trip['id']?.toString() ?? '') ?? 0;
@@ -478,17 +531,18 @@ class _OtherUserProfilePageState extends State<OtherUserProfilePage>
               context,
               AppRoutes.tripJoin,
               arguments: {
-                'id':          tripId,
-                'trip_id':     tripId,
+                'id':         tripId,
+                'trip_id':    tripId,
                 'destination': trip['destination']?.toString() ?? '',
                 'start_date':  trip['start_date']?.toString() ?? '',
                 'end_date':    trip['end_date']?.toString()   ?? '',
                 'status':      trip['status']?.toString()     ?? 'upcoming',
                 'vehicle':     trip['vehicle']?.toString()    ?? '',
                 'passengers':  trip['passengers'] is int
-                                   ? trip['passengers'] as int
-                                   : int.tryParse(
-                                         trip['passengers']?.toString() ?? '') ?? 0,
+                    ? trip['passengers'] as int
+                    : int.tryParse(
+                            trip['passengers']?.toString() ?? '') ??
+                        0,
               },
             );
           }
@@ -515,28 +569,26 @@ class _OtherUserProfilePageState extends State<OtherUserProfilePage>
                     Text(
                       trip['start_date']?.toString() ??
                           trip['date']?.toString() ?? '',
-                      style:
-                          const TextStyle(fontSize: 12, color: Colors.grey),
+                      style: const TextStyle(
+                          fontSize: 12, color: Colors.grey),
                     ),
                   ],
                 ),
               ),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
                   color: statusColor.withOpacity(0.12),
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
                       color: statusColor.withOpacity(0.4), width: 1),
                 ),
-                child: Text(
-                  statusLabel,
-                  style: TextStyle(
-                      color: statusColor,
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold),
-                ),
+                child: Text(statusLabel,
+                    style: TextStyle(
+                        color: statusColor,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold)),
               ),
               if (tripStatus == 'upcoming') ...[
                 const SizedBox(width: 6),
@@ -659,52 +711,96 @@ class _OtherUserProfilePageState extends State<OtherUserProfilePage>
                       ),
                     ),
 
+                    // ── CHANGE 2: PageView with caption overlay ───────
                     Expanded(
                       child: PageView.builder(
                         itemCount: images.length,
-                        controller: PageController(initialPage: currentIndex),
+                        controller:
+                            PageController(initialPage: currentIndex),
                         onPageChanged: (index) =>
                             setState(() => currentIndex = index),
                         itemBuilder: (_, index) {
-                          return InteractiveViewer(
-                            minScale: 0.5,
-                            maxScale: 4.0,
-                            child: Center(
-                              child: Image.network(
-                                images[index]['url'],
-                                fit: BoxFit.contain,
-                                loadingBuilder:
-                                    (context, child, loadingProgress) {
-                                  if (loadingProgress == null) return child;
-                                  return Center(
-                                    child: CircularProgressIndicator(
-                                      value: loadingProgress
-                                                  .expectedTotalBytes !=
-                                              null
-                                          ? loadingProgress
-                                                  .cumulativeBytesLoaded /
-                                              loadingProgress
-                                                  .expectedTotalBytes!
-                                          : null,
-                                      color: Colors.white,
-                                    ),
-                                  );
-                                },
-                                errorBuilder: (_, __, ___) => Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(Icons.broken_image,
-                                        color: Colors.white.withOpacity(0.7),
-                                        size: 50),
-                                    const SizedBox(height: 8),
-                                    Text('Failed to load image',
-                                        style: TextStyle(
+                          final caption =
+                              images[index]['caption']?.toString() ?? '';
+                          return Stack(
+                            children: [
+                              InteractiveViewer(
+                                minScale: 0.5,
+                                maxScale: 4.0,
+                                child: Center(
+                                  child: Image.network(
+                                    images[index]['url'],
+                                    fit: BoxFit.contain,
+                                    loadingBuilder:
+                                        (context, child, progress) {
+                                      if (progress == null) return child;
+                                      return Center(
+                                        child: CircularProgressIndicator(
+                                          value: progress
+                                                      .expectedTotalBytes !=
+                                                  null
+                                              ? progress
+                                                      .cumulativeBytesLoaded /
+                                                  progress
+                                                      .expectedTotalBytes!
+                                              : null,
+                                          color: Colors.white,
+                                        ),
+                                      );
+                                    },
+                                    errorBuilder: (_, __, ___) => Column(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        Icon(Icons.broken_image,
                                             color: Colors.white
-                                                .withOpacity(0.7))),
-                                  ],
+                                                .withOpacity(0.7),
+                                            size: 50),
+                                        const SizedBox(height: 8),
+                                        Text('Failed to load image',
+                                            style: TextStyle(
+                                                color: Colors.white
+                                                    .withOpacity(0.7))),
+                                      ],
+                                    ),
+                                  ),
                                 ),
                               ),
-                            ),
+
+                              // Caption gradient overlay
+                              if (caption.isNotEmpty)
+                                Positioned(
+                                  bottom: 0,
+                                  left: 0,
+                                  right: 0,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 20, vertical: 14),
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(
+                                        begin: Alignment.bottomCenter,
+                                        end: Alignment.topCenter,
+                                        colors: [
+                                          Colors.black.withOpacity(0.7),
+                                          Colors.transparent,
+                                        ],
+                                      ),
+                                    ),
+                                    child: Text(
+                                      caption,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w400,
+                                        height: 1.4,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                      maxLines: 3,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ),
+                            ],
                           );
                         },
                       ),
@@ -784,7 +880,8 @@ class _OtherUserProfilePageState extends State<OtherUserProfilePage>
                             Text(
                               name.isNotEmpty ? name : widget.userName,
                               style: const TextStyle(
-                                  fontSize: 20, fontWeight: FontWeight.bold),
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold),
                               overflow: TextOverflow.ellipsis,
                             ),
                           ],
@@ -807,7 +904,9 @@ class _OtherUserProfilePageState extends State<OtherUserProfilePage>
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    name.isNotEmpty ? name : widget.userName,
+                                    name.isNotEmpty
+                                        ? name
+                                        : widget.userName,
                                     style: const TextStyle(
                                         fontSize: 18,
                                         fontWeight: FontWeight.bold),
@@ -826,8 +925,8 @@ class _OtherUserProfilePageState extends State<OtherUserProfilePage>
                             Container(
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
-                                border:
-                                    Border.all(color: Colors.black, width: 3),
+                                border: Border.all(
+                                    color: Colors.black, width: 3),
                               ),
                               child: CircleAvatar(
                                 radius: 45,
@@ -859,8 +958,9 @@ class _OtherUserProfilePageState extends State<OtherUserProfilePage>
                           child: SizedBox(
                             width: double.infinity,
                             child: ElevatedButton(
-                              onPressed:
-                                  _followLoading ? null : _toggleFollow,
+                              onPressed: _followLoading
+                                  ? null
+                                  : _toggleFollow,
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: _isFollowing
                                     ? Colors.white
@@ -873,7 +973,8 @@ class _OtherUserProfilePageState extends State<OtherUserProfilePage>
                                     ? const BorderSide(color: Colors.black)
                                     : BorderSide.none,
                                 shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(10)),
+                                    borderRadius:
+                                        BorderRadius.circular(10)),
                               ),
                               child: _followLoading
                                   ? const SizedBox(
@@ -902,11 +1003,11 @@ class _OtherUserProfilePageState extends State<OtherUserProfilePage>
                         child: Row(
                           children: [
                             Expanded(
-                                child:
-                                    _StatItem(postCount.toString(), 'Posts')),
+                                child: _StatItem(
+                                    postCount.toString(), 'Posts')),
                             Expanded(
-                                child:
-                                    _StatItem(tripCount.toString(), 'Trips')),
+                                child: _StatItem(
+                                    tripCount.toString(), 'Trips')),
                             Expanded(
                               child: Material(
                                 color: Colors.transparent,
@@ -978,10 +1079,8 @@ class _OtherUserProfilePageState extends State<OtherUserProfilePage>
                               : ListView.builder(
                                   padding: const EdgeInsets.all(8),
                                   itemCount: trips.length,
-                                  itemBuilder: (context, index) {
-                                    return _buildTripCard(
-                                        trips[index] as Map);
-                                  },
+                                  itemBuilder: (context, index) =>
+                                      _buildTripCard(trips[index] as Map),
                                 ),
 
                           // Posts (Albums) tab
@@ -1031,59 +1130,44 @@ class _OtherUserProfilePageState extends State<OtherUserProfilePage>
                                                     width: double.infinity,
                                                     height: double.infinity,
                                                     loadingBuilder: (context,
-                                                        child,
-                                                        loadingProgress) {
-                                                      if (loadingProgress ==
-                                                          null) return child;
+                                                        child, progress) {
+                                                      if (progress == null)
+                                                        return child;
                                                       return Container(
                                                         color:
                                                             Colors.grey[200],
                                                         child: Center(
-                                                          child:
-                                                              CircularProgressIndicator(
-                                                            value: loadingProgress
-                                                                        .expectedTotalBytes !=
-                                                                    null
-                                                                ? loadingProgress
-                                                                        .cumulativeBytesLoaded /
-                                                                    loadingProgress
-                                                                        .expectedTotalBytes!
+                                                          child: CircularProgressIndicator(
+                                                            value: progress.expectedTotalBytes != null
+                                                                ? progress.cumulativeBytesLoaded /
+                                                                    progress.expectedTotalBytes!
                                                                 : null,
                                                             strokeWidth: 2,
-                                                            color:
-                                                                Colors.black,
+                                                            color: Colors.black,
                                                           ),
                                                         ),
                                                       );
                                                     },
-                                                    errorBuilder: (context,
-                                                        error, stackTrace) {
-                                                      return Container(
-                                                        color:
-                                                            Colors.grey[200],
-                                                        child: Column(
-                                                          mainAxisAlignment:
-                                                              MainAxisAlignment
-                                                                  .center,
-                                                          children: [
-                                                            const Icon(
-                                                                Icons
-                                                                    .broken_image,
-                                                                color:
-                                                                    Colors.grey,
-                                                                size: 30),
-                                                            const SizedBox(
-                                                                height: 4),
-                                                            Text('Error',
-                                                                style: TextStyle(
-                                                                    fontSize:
-                                                                        10,
-                                                                    color: Colors
-                                                                        .grey[600])),
-                                                          ],
-                                                        ),
-                                                      );
-                                                    },
+                                                    errorBuilder: (_, __, ___) =>
+                                                        Container(
+                                                      color: Colors.grey[200],
+                                                      child: Column(
+                                                        mainAxisAlignment:
+                                                            MainAxisAlignment
+                                                                .center,
+                                                        children: [
+                                                          const Icon(
+                                                              Icons.broken_image,
+                                                              color: Colors.grey,
+                                                              size: 30),
+                                                          const SizedBox(height: 4),
+                                                          Text('Error',
+                                                              style: TextStyle(
+                                                                  fontSize: 10,
+                                                                  color: Colors.grey[600])),
+                                                        ],
+                                                      ),
+                                                    ),
                                                   ),
                                           ),
                                           if (imageCount > 1)
@@ -1110,11 +1194,10 @@ class _OtherUserProfilePageState extends State<OtherUserProfilePage>
                                                     const SizedBox(width: 2),
                                                     Text('$imageCount',
                                                         style: const TextStyle(
-                                                          color: Colors.white,
-                                                          fontSize: 10,
-                                                          fontWeight:
-                                                              FontWeight.bold,
-                                                        )),
+                                                            color: Colors.white,
+                                                            fontSize: 10,
+                                                            fontWeight:
+                                                                FontWeight.bold)),
                                                   ],
                                                 ),
                                               ),
@@ -1141,18 +1224,17 @@ class _OtherUserProfilePageState extends State<OtherUserProfilePage>
                                                   end: Alignment.bottomCenter,
                                                   colors: [
                                                     Colors.transparent,
-                                                    Colors.black
-                                                        .withOpacity(0.7),
+                                                    Colors.black.withOpacity(0.7),
                                                   ],
                                                 ),
                                               ),
                                               child: Text(
                                                 tripName,
                                                 style: const TextStyle(
-                                                  color: Colors.white,
-                                                  fontSize: 10,
-                                                  fontWeight: FontWeight.w500,
-                                                ),
+                                                    color: Colors.white,
+                                                    fontSize: 10,
+                                                    fontWeight:
+                                                        FontWeight.w500),
                                                 maxLines: 1,
                                                 overflow:
                                                     TextOverflow.ellipsis,
@@ -1197,17 +1279,14 @@ class _StatItem extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
-          value,
-          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          textAlign: TextAlign.center,
-        ),
+        Text(value,
+            style: const TextStyle(
+                fontSize: 18, fontWeight: FontWeight.bold),
+            textAlign: TextAlign.center),
         const SizedBox(height: 4),
-        Text(
-          label,
-          style: const TextStyle(color: Colors.grey, fontSize: 12),
-          textAlign: TextAlign.center,
-        ),
+        Text(label,
+            style: const TextStyle(color: Colors.grey, fontSize: 12),
+            textAlign: TextAlign.center),
       ],
     );
   }

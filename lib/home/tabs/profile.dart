@@ -50,8 +50,6 @@ class _UserProfileState extends State<UserProfile>
     super.dispose();
   }
 
-  // ── Auth & Data ───────────────────────────────────────────────────────────
-
   Future<void> _checkAuthStatus() async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('auth_token');
@@ -66,7 +64,6 @@ class _UserProfileState extends State<UserProfile>
     String url = imageUrl.toString().trim();
     if (url.isEmpty) return '';
     if (url.startsWith('http://') || url.startsWith('https://')) return url;
-
     try {
       final supabase = Supabase.instance.client;
       return supabase.storage.from('post-image').getPublicUrl(url);
@@ -145,10 +142,7 @@ class _UserProfileState extends State<UserProfile>
     try {
       final profileRes = await http.get(
         Uri.parse('$baseUrl/api/profile/'),
-        headers: {
-          'Content-Type':  'application/json',
-          'Authorization': 'Token $token',
-        },
+        headers: {'Content-Type': 'application/json', 'Authorization': 'Token $token'},
       );
 
       if (profileRes.statusCode == 200) {
@@ -158,24 +152,16 @@ class _UserProfileState extends State<UserProfile>
 
         final tripsRes = await http.get(
           Uri.parse('$baseUrl/api/savetrip/my-trips/'),
-          headers: {
-            'Content-Type':  'application/json',
-            'Authorization': 'Token $token',
-          },
+          headers: {'Content-Type': 'application/json', 'Authorization': 'Token $token'},
         );
 
         final otherRes = await http.get(
           Uri.parse('$baseUrl/api/profile/$userId/'),
-          headers: {
-            'Content-Type':  'application/json',
-            'Authorization': 'Token $token',
-          },
+          headers: {'Content-Type': 'application/json', 'Authorization': 'Token $token'},
         );
 
         List tripsData = [];
-        if (tripsRes.statusCode == 200) {
-          tripsData = jsonDecode(tripsRes.body);
-        }
+        if (tripsRes.statusCode == 200) tripsData = jsonDecode(tripsRes.body);
 
         if (otherRes.statusCode == 200) {
           final other = jsonDecode(otherRes.body);
@@ -183,8 +169,7 @@ class _UserProfileState extends State<UserProfile>
           final processedPosts = (other['posts'] as List).map((post) {
             if (post is Map) {
               String imageUrl = post['image_url']?.toString() ??
-                  post['url']?.toString() ??
-                  post['image']?.toString() ?? '';
+                  post['url']?.toString() ?? post['image']?.toString() ?? '';
               final validUrl = _getValidImageUrl(imageUrl);
 
               String tripDestination = 'Unknown Trip';
@@ -195,13 +180,11 @@ class _UserProfileState extends State<UserProfile>
               if (post['trip'] != null) {
                 if (post['trip'] is Map) {
                   tripDetails = Map<String, dynamic>.from(post['trip']);
-                  if (tripDetails['destination'] != null) {
+                  if (tripDetails['destination'] != null)
                     tripDestination = tripDetails['destination'].toString();
-                  }
                   if (tripDetails['id'] != null) tripId = tripDetails['id'];
-                  if (tripDetails['start_date'] != null) {
+                  if (tripDetails['start_date'] != null)
                     tripDate = ' • ${tripDetails['start_date']}';
-                  }
                 } else if (post['trip'] is String) {
                   tripId = int.tryParse(post['trip'].toString());
                 } else if (post['trip'] is num) {
@@ -209,25 +192,20 @@ class _UserProfileState extends State<UserProfile>
                 }
               }
 
-              if (tripDestination == 'Unknown Trip' &&
-                  post['trip_destination'] != null) {
+              if (tripDestination == 'Unknown Trip' && post['trip_destination'] != null)
                 tripDestination = post['trip_destination'].toString();
-              }
-              if (tripDestination == 'Unknown Trip' &&
-                  post['destination'] != null) {
+              if (tripDestination == 'Unknown Trip' && post['destination'] != null)
                 tripDestination = post['destination'].toString();
-              }
 
               return {
                 ...post,
-                'id':               post['id'],
+                'id':                post['id'],
                 'display_image_url': validUrl,
-                'image_url':        validUrl,
-                'trip_display':     tripDestination,
-                'trip_date':        tripDate,
-                'trip_id':          tripId,
-                'trip_details':
-                    tripDetails ?? post['trip'] ?? post['trip_details'],
+                'image_url':         validUrl,
+                'trip_display':      tripDestination,
+                'trip_date':         tripDate,
+                'trip_id':           tripId,
+                'trip_details':      tripDetails ?? post['trip'] ?? post['trip_details'],
               };
             }
             return post;
@@ -236,8 +214,8 @@ class _UserProfileState extends State<UserProfile>
           final grouped = _groupPostsByTrip(processedPosts);
 
           setState(() {
-            username = '${data['first_name'] ?? ''} ${data['last_name'] ?? ''}'
-                .trim();
+            username =
+                '${data['first_name'] ?? ''} ${data['last_name'] ?? ''}'.trim();
             if (username.isEmpty) username = 'Unknown';
             email          = data['email'] ?? 'No email';
             bio            = data['bio'] ?? '';
@@ -261,14 +239,11 @@ class _UserProfileState extends State<UserProfile>
   Future<void> _refresh() async => fetchProfileData();
 
   Future<void> _logout() async {
-    try {
-      await Supabase.instance.client.auth.signOut();
-    } catch (_) {}
+    try { await Supabase.instance.client.auth.signOut(); } catch (_) {}
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('auth_token');
     if (mounted) {
-      Navigator.pushNamedAndRemoveUntil(
-          context, AppRoutes.login, (route) => false);
+      Navigator.pushNamedAndRemoveUntil(context, AppRoutes.login, (route) => false);
     }
   }
 
@@ -298,17 +273,17 @@ class _UserProfileState extends State<UserProfile>
     try {
       final response = await http.get(
         Uri.parse('$baseUrl/api/profile/$_currentUserId/$type/'),
-        headers: {
-          'Content-Type':  'application/json',
-          'Authorization': 'Token $token',
-        },
+        headers: {'Content-Type': 'application/json', 'Authorization': 'Token $token'},
       );
 
       if (context.mounted) Navigator.pop(context);
 
       if (response.statusCode == 200) {
         final List<dynamic> users = jsonDecode(response.body);
-        if (context.mounted) _showUserBottomSheet(title, users);
+        // Deduplicate
+        final Map<int, dynamic> unique = {};
+        for (var u in users) unique[u['id']] = u;
+        if (context.mounted) _showUserBottomSheet(title, unique.values.toList());
       } else {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -322,13 +297,14 @@ class _UserProfileState extends State<UserProfile>
     }
   }
 
+  // ── CHANGE 1: No email subtitle in followers/following list ───────────────
   void _showUserBottomSheet(String title, List<dynamic> users) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => Container(
-        height: MediaQuery.of(context).size.height * 0.7,
+        height: MediaQuery.of(context).size.height * 0.75,
         decoration: const BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
@@ -337,17 +313,33 @@ class _UserProfileState extends State<UserProfile>
           children: [
             Container(
               margin: const EdgeInsets.only(top: 12, bottom: 8),
-              width: 40,
-              height: 4,
+              width: 40, height: 4,
               decoration: BoxDecoration(
                   color: Colors.grey[300],
                   borderRadius: BorderRadius.circular(2)),
             ),
             Padding(
               padding: const EdgeInsets.all(16),
-              child: Text(title,
-                  style: const TextStyle(
-                      fontSize: 20, fontWeight: FontWeight.bold)),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(title,
+                      style: const TextStyle(
+                          fontSize: 20, fontWeight: FontWeight.bold)),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                        color: Colors.black,
+                        borderRadius: BorderRadius.circular(20)),
+                    child: Text('${users.length}',
+                        style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white)),
+                  ),
+                ],
+              ),
             ),
             const Divider(height: 1),
             Expanded(
@@ -360,7 +352,7 @@ class _UserProfileState extends State<UserProfile>
                               title == 'Followers'
                                   ? Icons.people_outline
                                   : Icons.person_outline,
-                              size: 48,
+                              size: 64,
                               color: Colors.grey[400]),
                           const SizedBox(height: 16),
                           Text(
@@ -372,48 +364,63 @@ class _UserProfileState extends State<UserProfile>
                         ],
                       ),
                     )
-                  : ListView.builder(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
+                  : ListView.separated(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
                       itemCount: users.length,
+                      separatorBuilder: (_, __) => const Divider(
+                          height: 1,
+                          indent: 80,
+                          endIndent: 16,
+                          color: Color(0xFFF0F0F0)),
                       itemBuilder: (context, index) {
                         final user = users[index];
-                        return ListTile(
-                          leading: CircleAvatar(
-                            radius: 24,
-                            backgroundColor: Colors.grey[200],
-                            backgroundImage: user['profile_picture'] !=
-                                        null &&
-                                    user['profile_picture']
-                                        .toString()
-                                        .isNotEmpty
-                                ? NetworkImage(user['profile_picture'])
-                                : null,
-                            child: user['profile_picture'] == null ||
-                                    user['profile_picture']
-                                        .toString()
-                                        .isEmpty
-                                ? const Icon(Icons.person,
-                                    color: Colors.grey)
-                                : null,
-                          ),
-                          title: Text(user['username'] ?? 'Unknown User',
-                              style: const TextStyle(
-                                  fontWeight: FontWeight.w600)),
-                          subtitle: Text(user['email'] ?? '',
-                              style: TextStyle(
-                                  color: Colors.grey[600], fontSize: 13)),
-                          onTap: () {
-                            Navigator.pop(context);
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => OtherUserProfilePage(
-                                  userId:   user['id'],
-                                  userName: user['username'] ?? 'User',
-                                ),
+                        return Container(
+                          margin: const EdgeInsets.symmetric(vertical: 4),
+                          child: ListTile(
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 8),
+                            leading: CircleAvatar(
+                              radius: 32,
+                              backgroundColor: Colors.grey[200],
+                              backgroundImage: user['profile_picture'] != null &&
+                                      user['profile_picture'].toString().isNotEmpty
+                                  ? NetworkImage(user['profile_picture'])
+                                  : null,
+                              child: user['profile_picture'] == null ||
+                                      user['profile_picture'].toString().isEmpty
+                                  ? Icon(Icons.person, size: 32, color: Colors.grey[400])
+                                  : null,
+                            ),
+                            title: Padding(
+                              padding: const EdgeInsets.only(bottom: 4),
+                              child: Text(
+                                user['username'] ?? 'Unknown User',
+                                style: const TextStyle(
+                                    fontWeight: FontWeight.w600, fontSize: 16),
                               ),
-                            );
-                          },
+                            ),
+                            // ← NO subtitle / email here
+                            trailing: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                  color: Colors.grey[100],
+                                  shape: BoxShape.circle),
+                              child: const Icon(Icons.arrow_forward_ios,
+                                  size: 14, color: Colors.grey),
+                            ),
+                            onTap: () {
+                              Navigator.pop(context);
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => OtherUserProfilePage(
+                                    userId:   user['id'],
+                                    userName: user['username'] ?? 'User',
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
                         );
                       },
                     ),
@@ -436,25 +443,14 @@ class _UserProfileState extends State<UserProfile>
     else if (trip['trip_id'] != null) tripId = int.tryParse(trip['trip_id'].toString()) ?? 0;
     else if (trip['id'] != null)      tripId = int.tryParse(trip['id'].toString()) ?? 0;
 
-    Color    statusColor;
-    String   statusLabel;
-    IconData statusIcon;
-
+    Color statusColor; String statusLabel; IconData statusIcon;
     switch (tripStatus) {
       case 'ongoing':
-        statusColor = Colors.orange;
-        statusLabel = 'Ongoing';
-        statusIcon  = Icons.directions_run;
-        break;
+        statusColor = Colors.orange; statusLabel = 'Ongoing'; statusIcon = Icons.directions_run; break;
       case 'completed':
-        statusColor = Colors.green;
-        statusLabel = 'Completed';
-        statusIcon  = Icons.check_circle;
-        break;
+        statusColor = Colors.green; statusLabel = 'Completed'; statusIcon = Icons.check_circle; break;
       default:
-        statusColor = Colors.blue;
-        statusLabel = 'Upcoming';
-        statusIcon  = Icons.calendar_today;
+        statusColor = Colors.blue; statusLabel = 'Upcoming'; statusIcon = Icons.calendar_today;
     }
 
     return Card(
@@ -466,42 +462,24 @@ class _UserProfileState extends State<UserProfile>
         borderRadius: BorderRadius.circular(15),
         onTap: () {
           if (tripStatus == 'upcoming') {
-            // FIX: ...trip caused "Map<dynamic,dynamic> is not a subtype" crash
-            // because trip is typed as Map (not Map<String,dynamic>).
-            // Spread it safely by casting first.
             final safeTrip = Map<String, dynamic>.from(trip);
-            Navigator.pushNamed(
-              context,
-              AppRoutes.groupChat,
-              arguments: {
-                ...safeTrip,
-                'group_id':   trip['group_id'] ?? 0,
-                'group_name': (trip['group_name'] ?? trip['destination'] ?? 'Group').toString(),
-                'admin_id':   trip['admin_id'] ?? 0,
-                'trip_id':    tripId,
-              },
-            );
+            Navigator.pushNamed(context, AppRoutes.groupChat, arguments: {
+              ...safeTrip,
+              'group_id':   trip['group_id'] ?? 0,
+              'group_name': (trip['group_name'] ?? trip['destination'] ?? 'Group').toString(),
+              'admin_id':   trip['admin_id'] ?? 0,
+              'trip_id':    tripId,
+            });
           } else if (tripStatus == 'ongoing') {
             if (tripId == 0) return;
-            if (isAdmin) {
-              Navigator.pushNamed(
-                context,
-                AppRoutes.otpVerify,
-                arguments: {
-                  'trip_id':   tripId,
-                  'trip_name': (trip['destination'] ?? 'Trip').toString(),
-                },
-              );
-            } else {
-              Navigator.pushNamed(
-                context,
-                AppRoutes.otpShow,
-                arguments: {
-                  'trip_id':   tripId,
-                  'trip_name': (trip['destination'] ?? 'Trip').toString(),
-                },
-              );
-            }
+            Navigator.pushNamed(
+              context,
+              isAdmin ? AppRoutes.otpVerify : AppRoutes.otpShow,
+              arguments: {
+                'trip_id':   tripId,
+                'trip_name': (trip['destination'] ?? 'Trip').toString(),
+              },
+            );
           }
         },
         child: Padding(
@@ -517,17 +495,11 @@ class _UserProfileState extends State<UserProfile>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      trip['destination']?.toString() ?? 'Unknown',
-                      style: const TextStyle(
-                          fontWeight: FontWeight.bold, fontSize: 15),
-                    ),
+                    Text(trip['destination']?.toString() ?? 'Unknown',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
                     const SizedBox(height: 3),
-                    Text(
-                      trip['start_date']?.toString() ??
-                          trip['date']?.toString() ?? '',
-                      style: const TextStyle(fontSize: 12, color: Colors.grey),
-                    ),
+                    Text(trip['start_date']?.toString() ?? trip['date']?.toString() ?? '',
+                        style: const TextStyle(fontSize: 12, color: Colors.grey)),
                   ],
                 ),
               ),
@@ -536,21 +508,15 @@ class _UserProfileState extends State<UserProfile>
                 decoration: BoxDecoration(
                   color: statusColor.withOpacity(0.12),
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                      color: statusColor.withOpacity(0.4), width: 1),
+                  border: Border.all(color: statusColor.withOpacity(0.4), width: 1),
                 ),
-                child: Text(
-                  statusLabel,
-                  style: TextStyle(
-                      color: statusColor,
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold),
-                ),
+                child: Text(statusLabel,
+                    style: TextStyle(
+                        color: statusColor, fontSize: 11, fontWeight: FontWeight.bold)),
               ),
               if (tripStatus != 'completed') ...[
                 const SizedBox(width: 6),
-                Icon(Icons.arrow_forward_ios,
-                    size: 14, color: Colors.grey[400]),
+                Icon(Icons.arrow_forward_ios, size: 14, color: Colors.grey[400]),
               ],
             ],
           ),
@@ -559,25 +525,17 @@ class _UserProfileState extends State<UserProfile>
     );
   }
 
-  // ── Bio & Profile Pic update ──────────────────────────────────────────────
+  // ── Bio & Profile Pic ─────────────────────────────────────────────────────
 
   Future<void> _updateBio(String newBio) async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('auth_token');
     if (token == null) return;
-
     try {
-      await http.patch(
-        Uri.parse('$baseUrl/api/profile/'),
-        headers: {
-          'Content-Type':  'application/json',
-          'Authorization': 'Token $token',
-        },
-        body: jsonEncode({'bio': newBio}),
-      );
-    } catch (e) {
-      debugPrint('Error updating bio: $e');
-    }
+      await http.patch(Uri.parse('$baseUrl/api/profile/'),
+          headers: {'Content-Type': 'application/json', 'Authorization': 'Token $token'},
+          body: jsonEncode({'bio': newBio}));
+    } catch (e) { debugPrint('Error updating bio: $e'); }
   }
 
   Future<void> _uploadProfilePicture(File imageFile) async {
@@ -591,29 +549,16 @@ class _UserProfileState extends State<UserProfile>
 
     try {
       await supabase.storage.from('profile-pictures').uploadBinary(
-            path,
-            await imageFile.readAsBytes(),
-            fileOptions: const FileOptions(contentType: 'image/png'),
-          );
+          path, await imageFile.readAsBytes(),
+          fileOptions: const FileOptions(contentType: 'image/png'));
 
-      final url =
-          supabase.storage.from('profile-pictures').getPublicUrl(path);
+      final url = supabase.storage.from('profile-pictures').getPublicUrl(path);
+      final res = await http.patch(Uri.parse('$baseUrl/api/profile/'),
+          headers: {'Content-Type': 'application/json', 'Authorization': 'Token $token'},
+          body: jsonEncode({'profile_picture': url}));
 
-      final updateRes = await http.patch(
-        Uri.parse('$baseUrl/api/profile/'),
-        headers: {
-          'Content-Type':  'application/json',
-          'Authorization': 'Token $token',
-        },
-        body: jsonEncode({'profile_picture': url}),
-      );
-
-      if (updateRes.statusCode == 200) {
-        setState(() => profilePicture = url);
-      }
-    } catch (e) {
-      debugPrint('Error uploading profile picture: $e');
-    }
+      if (res.statusCode == 200) setState(() => profilePicture = url);
+    } catch (e) { debugPrint('Error uploading profile picture: $e'); }
   }
 
   // ── Album viewer ──────────────────────────────────────────────────────────
@@ -634,12 +579,10 @@ class _UserProfileState extends State<UserProfile>
             child: Stack(
               children: [
                 Positioned.fill(
-                  child: Image.network(
-                    images[currentIndex]['url'],
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) =>
-                        Container(color: Colors.black.withOpacity(0.7)),
-                  ),
+                  child: Image.network(images[currentIndex]['url'],
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) =>
+                          Container(color: Colors.black.withOpacity(0.7))),
                 ),
                 Positioned.fill(
                     child: Container(color: Colors.black.withOpacity(0.3))),
@@ -651,49 +594,37 @@ class _UserProfileState extends State<UserProfile>
                   children: [
                     SafeArea(
                       child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 12),
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                         child: Row(
                           children: [
                             Expanded(
                               child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 16, vertical: 10),
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                                 decoration: BoxDecoration(
                                   color: Colors.white.withOpacity(0.2),
                                   borderRadius: BorderRadius.circular(30),
-                                  border: Border.all(
-                                      color: Colors.white.withOpacity(0.3),
-                                      width: 1),
+                                  border: Border.all(color: Colors.white.withOpacity(0.3), width: 1),
                                 ),
                                 child: Row(
                                   children: [
-                                    const Icon(Icons.location_on,
-                                        color: Colors.white, size: 18),
+                                    const Icon(Icons.location_on, color: Colors.white, size: 18),
                                     const SizedBox(width: 8),
                                     Expanded(
                                       child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
+                                        crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
+                                          Text(tripAlbum['trip_name']?.toString() ?? 'Unknown',
+                                              style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontWeight: FontWeight.w600,
+                                                  fontSize: 14),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis),
                                           Text(
-                                            tripAlbum['trip_name']
-                                                    ?.toString() ??
-                                                'Unknown',
-                                            style: const TextStyle(
-                                                color: Colors.white,
-                                                fontWeight: FontWeight.w600,
-                                                fontSize: 14),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                          Text(
-                                            '${images.length} ${images.length == 1 ? 'photo' : 'photos'}',
-                                            style: TextStyle(
-                                                color: Colors.white
-                                                    .withOpacity(0.8),
-                                                fontSize: 12),
-                                          ),
+                                              '${images.length} ${images.length == 1 ? 'photo' : 'photos'}',
+                                              style: TextStyle(
+                                                  color: Colors.white.withOpacity(0.8),
+                                                  fontSize: 12)),
                                         ],
                                       ),
                                     ),
@@ -711,60 +642,96 @@ class _UserProfileState extends State<UserProfile>
                         ),
                       ),
                     ),
+
+                    // ── CHANGE 2: PageView with caption overlay ───────
                     Expanded(
                       child: PageView.builder(
                         itemCount: images.length,
                         controller: PageController(initialPage: currentIndex),
-                        onPageChanged: (index) =>
-                            setState(() => currentIndex = index),
+                        onPageChanged: (i) => setState(() => currentIndex = i),
                         itemBuilder: (_, index) {
-                          return InteractiveViewer(
-                            minScale: 0.5,
-                            maxScale: 4.0,
-                            child: Center(
-                              child: Image.network(
-                                images[index]['url'],
-                                fit: BoxFit.contain,
-                                loadingBuilder:
-                                    (context, child, loadingProgress) {
-                                  if (loadingProgress == null) return child;
-                                  return Center(
-                                    child: CircularProgressIndicator(
-                                      value: loadingProgress
-                                                  .expectedTotalBytes !=
-                                              null
-                                          ? loadingProgress
-                                                  .cumulativeBytesLoaded /
-                                              loadingProgress
-                                                  .expectedTotalBytes!
-                                          : null,
-                                      color: Colors.white,
+                          final caption =
+                              images[index]['caption']?.toString() ?? '';
+                          return Stack(
+                            children: [
+                              InteractiveViewer(
+                                minScale: 0.5,
+                                maxScale: 4.0,
+                                child: Center(
+                                  child: Image.network(
+                                    images[index]['url'],
+                                    fit: BoxFit.contain,
+                                    loadingBuilder: (context, child, progress) {
+                                      if (progress == null) return child;
+                                      return Center(
+                                        child: CircularProgressIndicator(
+                                          value: progress.expectedTotalBytes != null
+                                              ? progress.cumulativeBytesLoaded /
+                                                  progress.expectedTotalBytes!
+                                              : null,
+                                          color: Colors.white,
+                                        ),
+                                      );
+                                    },
+                                    errorBuilder: (_, __, ___) => Column(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Icon(Icons.broken_image,
+                                            color: Colors.white.withOpacity(0.7),
+                                            size: 50),
+                                        const SizedBox(height: 8),
+                                        Text('Failed to load image',
+                                            style: TextStyle(
+                                                color:
+                                                    Colors.white.withOpacity(0.7))),
+                                      ],
                                     ),
-                                  );
-                                },
-                                errorBuilder: (_, __, ___) => Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(Icons.broken_image,
-                                        color: Colors.white.withOpacity(0.7),
-                                        size: 50),
-                                    const SizedBox(height: 8),
-                                    Text('Failed to load image',
-                                        style: TextStyle(
-                                            color: Colors.white
-                                                .withOpacity(0.7))),
-                                  ],
+                                  ),
                                 ),
                               ),
-                            ),
+
+                              // Caption gradient overlay
+                              if (caption.isNotEmpty)
+                                Positioned(
+                                  bottom: 0,
+                                  left: 0,
+                                  right: 0,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 20, vertical: 14),
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(
+                                        begin: Alignment.bottomCenter,
+                                        end: Alignment.topCenter,
+                                        colors: [
+                                          Colors.black.withOpacity(0.7),
+                                          Colors.transparent,
+                                        ],
+                                      ),
+                                    ),
+                                    child: Text(
+                                      caption,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w400,
+                                        height: 1.4,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                      maxLines: 3,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ),
+                            ],
                           );
                         },
                       ),
                     ),
+
                     SafeArea(
                       child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 12),
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
@@ -805,15 +772,13 @@ class _UserProfileState extends State<UserProfile>
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(0.2),
         shape: BoxShape.circle,
-        border:
-            Border.all(color: Colors.white.withOpacity(0.3), width: 1),
+        border: Border.all(color: Colors.white.withOpacity(0.3), width: 1),
       ),
       child: IconButton(
         icon: Icon(icon, color: Colors.white, size: 22),
         onPressed: onTap,
         padding: EdgeInsets.zero,
-        constraints:
-            const BoxConstraints(minWidth: 40, minHeight: 40),
+        constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
       ),
     );
   }
@@ -824,17 +789,13 @@ class _UserProfileState extends State<UserProfile>
       builder: (context) => AlertDialog(
         title: const Text('Delete Album'),
         content: Text(
-          'Are you sure you want to delete all ${(album['images'] as List).length} photos from "${album['trip_name']}"?',
-        ),
+            'Are you sure you want to delete all ${(album['images'] as List).length} photos from "${album['trip_name']}"?'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(context),
               child: const Text('Cancel')),
           TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _deleteAlbum(album);
-            },
+            onPressed: () { Navigator.pop(context); _deleteAlbum(album); },
             style: TextButton.styleFrom(foregroundColor: Colors.red),
             child: const Text('Delete All'),
           ),
@@ -853,63 +814,37 @@ class _UserProfileState extends State<UserProfile>
     setState(() => _isLoading = true);
 
     try {
-      // Delete posts from backend
       for (var postId in postIds) {
         try {
-          await http.delete(
-            Uri.parse('$baseUrl/api/posts/$postId/'),
-            headers: {'Authorization': 'Token $token'},
-          );
-        } catch (e) {
-          debugPrint('Error deleting post $postId: $e');
-        }
+          await http.delete(Uri.parse('$baseUrl/api/posts/$postId/'),
+              headers: {'Authorization': 'Token $token'});
+        } catch (e) { debugPrint('Error deleting post $postId: $e'); }
       }
 
-      // Delete images from Supabase storage
-      // FIX: extract the full storage object path, not just the filename.
-      // A public URL looks like:
-      //   https://<project>.supabase.co/storage/v1/object/public/post-image/<path>
-      // We need everything after "/post-image/" as the storage object path.
       for (var image in images) {
         try {
-          final imageUrl = image['url'] as String;
-          final uri      = Uri.parse(imageUrl);
-
-          // Find the bucket name segment and take everything after it
-          final segments   = uri.pathSegments;
-          final bucketName = 'post-image';
-          final bucketIdx  = segments.indexOf(bucketName);
-
+          final uri       = Uri.parse(image['url'] as String);
+          final segments  = uri.pathSegments;
+          const bucket    = 'post-image';
+          final bucketIdx = segments.indexOf(bucket);
           if (bucketIdx != -1 && bucketIdx < segments.length - 1) {
-            // Reconstruct the path inside the bucket
-            final storagePath =
-                segments.sublist(bucketIdx + 1).join('/');
-            await Supabase.instance.client.storage
-                .from(bucketName)
-                .remove([storagePath]);
+            final storagePath = segments.sublist(bucketIdx + 1).join('/');
+            await Supabase.instance.client.storage.from(bucket).remove([storagePath]);
           }
-        } catch (e) {
-          debugPrint('Error deleting image from Supabase: $e');
-        }
+        } catch (e) { debugPrint('Error deleting image: $e'); }
       }
 
       await fetchProfileData();
-
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text('${images.length} photos deleted successfully'),
-            backgroundColor: Colors.green,
-          ),
-        );
+            backgroundColor: Colors.green));
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text('Error deleting photos: $e'),
-              backgroundColor: Colors.red),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Error deleting photos: $e'),
+            backgroundColor: Colors.red));
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -922,25 +857,17 @@ class _UserProfileState extends State<UserProfile>
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
-        shape:
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text('Logout'),
         content: const Text('Are you sure you want to logout?'),
         actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
           ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-              _logout();
-            },
+            onPressed: () { Navigator.pop(context); _logout(); },
             style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.black,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(20)),
-            ),
+                backgroundColor: Colors.black,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20))),
             child: const Text('Logout'),
           ),
         ],
@@ -952,42 +879,26 @@ class _UserProfileState extends State<UserProfile>
     showModalBottomSheet(
       context: context,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(25)),
-      ),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
       builder: (context) => Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 40,
-              height: 4,
+              width: 40, height: 4,
               margin: const EdgeInsets.only(bottom: 20),
               decoration: BoxDecoration(
-                  color: Colors.grey[400],
-                  borderRadius: BorderRadius.circular(10)),
+                  color: Colors.grey[400], borderRadius: BorderRadius.circular(10)),
             ),
-            ListTile(
-                leading: const Icon(Icons.settings),
-                title: const Text('Settings'),
-                onTap: () => Navigator.pop(context)),
-            ListTile(
-                leading: const Icon(Icons.tune),
-                title: const Text('Account Preferences'),
-                onTap: () => Navigator.pop(context)),
-            ListTile(
-                leading: const Icon(Icons.lock_outline),
-                title: const Text('Privacy'),
-                onTap: () => Navigator.pop(context)),
+            ListTile(leading: const Icon(Icons.settings), title: const Text('Settings'), onTap: () => Navigator.pop(context)),
+            ListTile(leading: const Icon(Icons.tune), title: const Text('Account Preferences'), onTap: () => Navigator.pop(context)),
+            ListTile(leading: const Icon(Icons.lock_outline), title: const Text('Privacy'), onTap: () => Navigator.pop(context)),
             const Divider(),
             ListTile(
               leading: const Icon(Icons.logout, color: Colors.red),
-              title: const Text('Logout',
-                  style: TextStyle(color: Colors.red)),
-              onTap: () {
-                Navigator.pop(context);
-                _showLogoutDialog();
-              },
+              title: const Text('Logout', style: TextStyle(color: Colors.red)),
+              onTap: () { Navigator.pop(context); _showLogoutDialog(); },
             ),
           ],
         ),
@@ -1003,35 +914,26 @@ class _UserProfileState extends State<UserProfile>
       backgroundColor: Colors.white,
       body: SafeArea(
         child: _isLoading
-            ? const Center(
-                child: CircularProgressIndicator(color: Colors.black))
+            ? const Center(child: CircularProgressIndicator(color: Colors.black))
             : RefreshIndicator(
                 onRefresh: _refresh,
                 color: Colors.black,
                 child: CustomScrollView(
                   slivers: [
-                    // Header
                     SliverToBoxAdapter(
                       child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 20, vertical: 12),
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                         child: Stack(
                           alignment: Alignment.center,
                           children: [
                             const Center(
-                              child: Text(
-                                'Profile',
-                                style: TextStyle(
-                                    fontSize: 22,
-                                    fontWeight: FontWeight.bold),
-                              ),
-                            ),
+                                child: Text('Profile',
+                                    style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold))),
                             Align(
                               alignment: Alignment.centerRight,
                               child: GestureDetector(
-                                onTap: _showSettingsMenu,
-                                child: const _CompassSettingsIcon(),
-                              ),
+                                  onTap: _showSettingsMenu,
+                                  child: const _CompassSettingsIcon()),
                             ),
                           ],
                         ),
@@ -1040,11 +942,9 @@ class _UserProfileState extends State<UserProfile>
 
                     const SliverToBoxAdapter(child: SizedBox(height: 10)),
 
-                    // Avatar + info
                     SliverToBoxAdapter(
                       child: Padding(
-                        padding:
-                            const EdgeInsets.symmetric(horizontal: 20),
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -1052,26 +952,17 @@ class _UserProfileState extends State<UserProfile>
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(
-                                    username,
-                                    style: const TextStyle(
-                                        fontSize: 18,
-                                        fontWeight: FontWeight.bold),
-                                  ),
+                                  Text(username,
+                                      style: const TextStyle(
+                                          fontSize: 18, fontWeight: FontWeight.bold)),
                                   const SizedBox(height: 2),
-                                  Text(
-                                    email,
-                                    style: const TextStyle(
-                                        fontSize: 14, color: Colors.grey),
-                                  ),
+                                  Text(email,
+                                      style: const TextStyle(fontSize: 14, color: Colors.grey)),
                                   if (bio.isNotEmpty) ...[
                                     const SizedBox(height: 6),
-                                    Text(
-                                      bio,
-                                      style: const TextStyle(
-                                          fontSize: 15,
-                                          color: Colors.black87),
-                                    ),
+                                    Text(bio,
+                                        style: const TextStyle(
+                                            fontSize: 15, color: Colors.black87)),
                                   ],
                                 ],
                               ),
@@ -1079,22 +970,17 @@ class _UserProfileState extends State<UserProfile>
                             const SizedBox(width: 15),
                             Container(
                               decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                    color: Colors.black, width: 3),
-                              ),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: Colors.black, width: 3)),
                               child: CircleAvatar(
                                 radius: 45,
-                                backgroundColor:
-                                    const Color(0xFFF5F5F5),
+                                backgroundColor: const Color(0xFFF5F5F5),
                                 backgroundImage: profilePicture != null &&
                                         profilePicture!.isNotEmpty
                                     ? NetworkImage(profilePicture!)
                                     : null,
-                                child: profilePicture == null ||
-                                        profilePicture!.isEmpty
-                                    ? const Icon(Icons.person,
-                                        size: 40, color: Colors.grey)
+                                child: profilePicture == null || profilePicture!.isEmpty
+                                    ? const Icon(Icons.person, size: 40, color: Colors.grey)
                                     : null,
                               ),
                             ),
@@ -1105,11 +991,9 @@ class _UserProfileState extends State<UserProfile>
 
                     const SliverToBoxAdapter(child: SizedBox(height: 15)),
 
-                    // Edit Profile button
                     SliverToBoxAdapter(
                       child: Padding(
-                        padding:
-                            const EdgeInsets.symmetric(horizontal: 20),
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
                         child: SizedBox(
                           width: double.infinity,
                           child: ElevatedButton(
@@ -1124,7 +1008,6 @@ class _UserProfileState extends State<UserProfile>
                                   ),
                                 ),
                               );
-
                               if (result != null) {
                                 final newBio = result['bio'];
                                 if (newBio != null && newBio != bio) {
@@ -1132,9 +1015,7 @@ class _UserProfileState extends State<UserProfile>
                                   _updateBio(newBio);
                                 }
                                 final File? imageFile = result['image'];
-                                if (imageFile != null) {
-                                  await _uploadProfilePicture(imageFile);
-                                }
+                                if (imageFile != null) await _uploadProfilePicture(imageFile);
                               }
                             },
                             style: ElevatedButton.styleFrom(
@@ -1145,8 +1026,7 @@ class _UserProfileState extends State<UserProfile>
                                   borderRadius: BorderRadius.circular(10)),
                             ),
                             child: const Text('Edit Profile',
-                                style: TextStyle(
-                                    fontWeight: FontWeight.bold)),
+                                style: TextStyle(fontWeight: FontWeight.bold)),
                           ),
                         ),
                       ),
@@ -1154,34 +1034,24 @@ class _UserProfileState extends State<UserProfile>
 
                     const SliverToBoxAdapter(child: SizedBox(height: 15)),
 
-                    // Stats
                     SliverToBoxAdapter(
                       child: Padding(
-                        padding:
-                            const EdgeInsets.symmetric(horizontal: 16),
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
                         child: Row(
                           children: [
-                            Expanded(
-                                child: _StatItem(
-                                    postCount.toString(), 'Posts')),
-                            Expanded(
-                                child: _StatItem(
-                                    tripCount.toString(), 'Trips')),
+                            Expanded(child: _StatItem(postCount.toString(), 'Posts')),
+                            Expanded(child: _StatItem(tripCount.toString(), 'Trips')),
                             Expanded(
                               child: Material(
                                 color: Colors.transparent,
                                 child: InkWell(
                                   onTap: _showFollowersList,
                                   borderRadius: BorderRadius.circular(10),
-                                  splashColor:
-                                      Colors.black.withOpacity(0.1),
+                                  splashColor: Colors.black.withOpacity(0.1),
                                   highlightColor: Colors.transparent,
                                   child: Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                        vertical: 8),
-                                    child: _StatItem(
-                                        followerCount.toString(),
-                                        'Followers'),
+                                    padding: const EdgeInsets.symmetric(vertical: 8),
+                                    child: _StatItem(followerCount.toString(), 'Followers'),
                                   ),
                                 ),
                               ),
@@ -1192,15 +1062,11 @@ class _UserProfileState extends State<UserProfile>
                                 child: InkWell(
                                   onTap: _showFollowingList,
                                   borderRadius: BorderRadius.circular(10),
-                                  splashColor:
-                                      Colors.black.withOpacity(0.1),
+                                  splashColor: Colors.black.withOpacity(0.1),
                                   highlightColor: Colors.transparent,
                                   child: Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                        vertical: 8),
-                                    child: _StatItem(
-                                        followingCount.toString(),
-                                        'Following'),
+                                    padding: const EdgeInsets.symmetric(vertical: 8),
+                                    child: _StatItem(followingCount.toString(), 'Following'),
                                   ),
                                 ),
                               ),
@@ -1212,216 +1078,152 @@ class _UserProfileState extends State<UserProfile>
 
                     const SliverToBoxAdapter(child: SizedBox(height: 15)),
 
-                    // Tabs
                     SliverToBoxAdapter(
                       child: TabBar(
                         controller: _tabController,
                         indicatorColor: Colors.black,
                         labelColor: Colors.black,
                         unselectedLabelColor: Colors.grey,
-                        tabs: const [
-                          Tab(text: 'Trips'),
-                          Tab(text: 'Posts'),
-                        ],
+                        tabs: const [Tab(text: 'Trips'), Tab(text: 'Posts')],
                       ),
                     ),
 
-                    // Tab content
                     SliverFillRemaining(
                       child: TabBarView(
                         controller: _tabController,
                         children: [
                           // Trips tab
                           trips.isEmpty
-                              ? Center(
-                                  child: _emptyState(
-                                      Icons.luggage, 'No trips yet'))
+                              ? Center(child: _emptyState(Icons.luggage, 'No trips yet'))
                               : ListView.builder(
                                   padding: const EdgeInsets.all(8),
                                   itemCount: trips.length,
-                                  itemBuilder: (context, index) {
-                                    return _buildTripCard(
-                                        trips[index] as Map);
-                                  },
+                                  itemBuilder: (context, index) =>
+                                      _buildTripCard(trips[index] as Map),
                                 ),
 
                           // Posts (Albums) tab
                           groupedPosts.isEmpty
                               ? Center(
-                                  child: _emptyState(Icons.photo_library,
-                                      'No posts yet'))
+                                  child: _emptyState(Icons.photo_library, 'No posts yet'))
                               : GridView.builder(
                                   padding: const EdgeInsets.all(10),
                                   gridDelegate:
                                       const SliverGridDelegateWithFixedCrossAxisCount(
-                                    crossAxisCount: 3,
-                                    crossAxisSpacing: 5,
-                                    mainAxisSpacing: 5,
-                                  ),
+                                          crossAxisCount: 3,
+                                          crossAxisSpacing: 5,
+                                          mainAxisSpacing: 5),
                                   itemCount: groupedPosts.length,
                                   itemBuilder: (context, index) {
                                     final album      = groupedPosts[index];
                                     final images     = album['images'] as List;
                                     final firstImage = album['first_image'] ??
-                                        (images.isNotEmpty
-                                            ? images[0]['url']
-                                            : '');
+                                        (images.isNotEmpty ? images[0]['url'] : '');
                                     final imageCount = images.length;
-                                    final tripName   =
+                                    final tripName =
                                         album['trip_name'] ?? 'Unknown Trip';
 
                                     return GestureDetector(
                                       onTap: () => _showTripAlbum(album),
-                                      onLongPress: () =>
-                                          _confirmDeleteAlbum(album),
+                                      onLongPress: () => _confirmDeleteAlbum(album),
                                       child: Stack(
                                         children: [
                                           ClipRRect(
-                                            borderRadius:
-                                                BorderRadius.circular(10),
+                                            borderRadius: BorderRadius.circular(10),
                                             child: firstImage.isEmpty
                                                 ? Container(
                                                     color: Colors.grey[200],
                                                     child: const Center(
-                                                        child: Icon(
-                                                            Icons.broken_image,
-                                                            color:
-                                                                Colors.grey)),
-                                                  )
+                                                        child: Icon(Icons.broken_image,
+                                                            color: Colors.grey)))
                                                 : Image.network(
                                                     firstImage,
                                                     fit: BoxFit.cover,
                                                     width: double.infinity,
                                                     height: double.infinity,
-                                                    loadingBuilder: (context,
-                                                        child,
-                                                        loadingProgress) {
-                                                      if (loadingProgress ==
-                                                          null) return child;
+                                                    loadingBuilder:
+                                                        (context, child, progress) {
+                                                      if (progress == null) return child;
                                                       return Container(
-                                                        color:
-                                                            Colors.grey[200],
+                                                        color: Colors.grey[200],
                                                         child: Center(
-                                                          child:
-                                                              CircularProgressIndicator(
-                                                            value: loadingProgress
-                                                                        .expectedTotalBytes !=
-                                                                    null
-                                                                ? loadingProgress
-                                                                        .cumulativeBytesLoaded /
-                                                                    loadingProgress
-                                                                        .expectedTotalBytes!
+                                                          child: CircularProgressIndicator(
+                                                            value: progress.expectedTotalBytes != null
+                                                                ? progress.cumulativeBytesLoaded /
+                                                                    progress.expectedTotalBytes!
                                                                 : null,
                                                             strokeWidth: 2,
-                                                            color:
-                                                                Colors.black,
+                                                            color: Colors.black,
                                                           ),
                                                         ),
                                                       );
                                                     },
-                                                    errorBuilder: (context,
-                                                        error, stackTrace) {
-                                                      return Container(
-                                                        color:
-                                                            Colors.grey[200],
-                                                        child: Column(
-                                                          mainAxisAlignment:
-                                                              MainAxisAlignment
-                                                                  .center,
-                                                          children: [
-                                                            const Icon(
-                                                                Icons
-                                                                    .broken_image,
-                                                                color: Colors
-                                                                    .grey,
-                                                                size: 30),
-                                                            const SizedBox(
-                                                                height: 4),
-                                                            Text('Error',
-                                                                style: TextStyle(
-                                                                    fontSize:
-                                                                        10,
-                                                                    color: Colors
-                                                                        .grey[600])),
-                                                          ],
-                                                        ),
-                                                      );
-                                                    },
+                                                    errorBuilder: (_, __, ___) => Container(
+                                                      color: Colors.grey[200],
+                                                      child: Column(
+                                                        mainAxisAlignment:
+                                                            MainAxisAlignment.center,
+                                                        children: [
+                                                          const Icon(Icons.broken_image,
+                                                              color: Colors.grey, size: 30),
+                                                          const SizedBox(height: 4),
+                                                          Text('Error',
+                                                              style: TextStyle(
+                                                                  fontSize: 10,
+                                                                  color: Colors.grey[600])),
+                                                        ],
+                                                      ),
+                                                    ),
                                                   ),
                                           ),
                                           if (imageCount > 1)
                                             Positioned(
-                                              top: 4,
-                                              right: 4,
+                                              top: 4, right: 4,
                                               child: Container(
-                                                padding:
-                                                    const EdgeInsets.all(4),
+                                                padding: const EdgeInsets.all(4),
                                                 decoration: BoxDecoration(
-                                                  color: Colors.black
-                                                      .withOpacity(0.7),
-                                                  borderRadius:
-                                                      BorderRadius.circular(6),
-                                                ),
+                                                    color: Colors.black.withOpacity(0.7),
+                                                    borderRadius: BorderRadius.circular(6)),
                                                 child: Row(
-                                                  mainAxisSize:
-                                                      MainAxisSize.min,
+                                                  mainAxisSize: MainAxisSize.min,
                                                   children: [
-                                                    const Icon(
-                                                        Icons.folder_copy,
-                                                        color: Colors.white,
-                                                        size: 12),
+                                                    const Icon(Icons.folder_copy,
+                                                        color: Colors.white, size: 12),
                                                     const SizedBox(width: 2),
-                                                    Text(
-                                                      '$imageCount',
-                                                      style: const TextStyle(
-                                                        color: Colors.white,
-                                                        fontSize: 10,
-                                                        fontWeight:
-                                                            FontWeight.bold,
-                                                      ),
-                                                    ),
+                                                    Text('$imageCount',
+                                                        style: const TextStyle(
+                                                            color: Colors.white,
+                                                            fontSize: 10,
+                                                            fontWeight: FontWeight.bold)),
                                                   ],
                                                 ),
                                               ),
                                             ),
                                           Positioned(
-                                            bottom: 0,
-                                            left: 0,
-                                            right: 0,
+                                            bottom: 0, left: 0, right: 0,
                                             child: Container(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                      horizontal: 6,
-                                                      vertical: 4),
+                                              padding: const EdgeInsets.symmetric(
+                                                  horizontal: 6, vertical: 4),
                                               decoration: BoxDecoration(
-                                                borderRadius:
-                                                    const BorderRadius.only(
-                                                  bottomLeft:
-                                                      Radius.circular(10),
-                                                  bottomRight:
-                                                      Radius.circular(10),
-                                                ),
+                                                borderRadius: const BorderRadius.only(
+                                                    bottomLeft: Radius.circular(10),
+                                                    bottomRight: Radius.circular(10)),
                                                 gradient: LinearGradient(
                                                   begin: Alignment.topCenter,
                                                   end: Alignment.bottomCenter,
                                                   colors: [
                                                     Colors.transparent,
-                                                    Colors.black
-                                                        .withOpacity(0.7),
+                                                    Colors.black.withOpacity(0.7),
                                                   ],
                                                 ),
                                               ),
-                                              child: Text(
-                                                tripName,
-                                                style: const TextStyle(
-                                                  color: Colors.white,
-                                                  fontSize: 10,
-                                                  fontWeight: FontWeight.w500,
-                                                ),
-                                                maxLines: 1,
-                                                overflow:
-                                                    TextOverflow.ellipsis,
-                                              ),
+                                              child: Text(tripName,
+                                                  style: const TextStyle(
+                                                      color: Colors.white,
+                                                      fontSize: 10,
+                                                      fontWeight: FontWeight.w500),
+                                                  maxLines: 1,
+                                                  overflow: TextOverflow.ellipsis),
                                             ),
                                           ),
                                         ],
@@ -1445,8 +1247,7 @@ class _UserProfileState extends State<UserProfile>
       children: [
         Icon(icon, size: 48, color: Colors.grey[300]),
         const SizedBox(height: 12),
-        Text(message,
-            style: const TextStyle(color: Colors.grey, fontSize: 16)),
+        Text(message, style: const TextStyle(color: Colors.grey, fontSize: 16)),
       ],
     );
   }
@@ -1464,17 +1265,13 @@ class _StatItem extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
-          value,
-          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-          textAlign: TextAlign.center,
-        ),
+        Text(value,
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            textAlign: TextAlign.center),
         const SizedBox(height: 4),
-        Text(
-          label,
-          style: const TextStyle(color: Colors.grey, fontSize: 12),
-          textAlign: TextAlign.center,
-        ),
+        Text(label,
+            style: const TextStyle(color: Colors.grey, fontSize: 12),
+            textAlign: TextAlign.center),
       ],
     );
   }
@@ -1491,6 +1288,43 @@ class _CompassSettingsIcon extends StatelessWidget {
         Icon(Icons.settings, size: 26, color: Colors.black),
         Icon(Icons.navigation, size: 14, color: Colors.black),
       ],
+    );
+  }
+}
+
+class TripCard extends StatelessWidget {
+  final String title;
+  final String status;
+  const TripCard({Key? key, required this.title, required this.status})
+      : super(key: key);
+
+  Color _statusColor() {
+    switch (status) {
+      case 'Ongoing':   return Colors.orange;
+      case 'Upcoming':  return Colors.blue;
+      case 'Completed': return Colors.green;
+      default:          return Colors.grey;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.all(12),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+      child: ListTile(
+        leading: const Icon(Icons.location_on, color: Colors.black),
+        title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+        trailing: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+              color: _statusColor().withOpacity(0.2),
+              borderRadius: BorderRadius.circular(20)),
+          child: Text(status,
+              style: TextStyle(
+                  color: _statusColor(), fontWeight: FontWeight.bold)),
+        ),
+      ),
     );
   }
 }

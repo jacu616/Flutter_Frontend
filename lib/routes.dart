@@ -9,12 +9,13 @@ import 'home/tabs/join/search.dart';
 import 'home/tabs/join/trip_join.dart';
 import 'home/tabs/join/join_verification.dart';
 import 'home/tabs/join/join_payment.dart';
-import 'home/tabs/profile.dart'; // ← correct path and class (UserProfile)
+import 'home/tabs/profile.dart';
 import 'home/tabs/trip/trip_details.dart';
 import 'home/tabs/trip/route_details.dart';
 import 'home/tabs/trip/payment_details.dart';
 import 'home/tabs/trip/contact_details.dart';
 import 'home/tabs/groups/group.dart';
+import 'home/notifications/notification.dart';
 
 class AppRoutes {
   static const String signup           = '/signup';
@@ -37,6 +38,7 @@ class AppRoutes {
   static const String groupDetails     = '/group-details';
   static const String otpVerify        = '/otp-verify';
   static const String otpShow          = '/otp-show';
+  static const String notifications    = '/notifications';
 
   static Map<String, WidgetBuilder> routes = {
     signup:           (context) => const SignupPage(),
@@ -55,6 +57,7 @@ class AppRoutes {
     paymentDetails:   (context) => const PaymentDetailsPage(),
     contactDetails:   (context) => const ContactDetailsPage(),
     groupChat:        (context) => const GroupPage(),
+    notifications:    (context) => const NotificationsPage(),
     // otherProfile, groupDetails, otpVerify, otpShow → handled via onGenerateRoute
     // in main.dart because they require safely parsed arguments
   };

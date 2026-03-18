@@ -22,14 +22,20 @@ class GroupDetailsPage extends StatefulWidget {
 }
 
 class _GroupDetailsPageState extends State<GroupDetailsPage> {
-  bool   _isLoading  = true;
-  bool   _isSaving   = false;
-  bool   _isEditing  = false;
+  bool   _isLoading    = true;
+  bool   _isSaving     = false;
+  bool   _isEditing    = false;
+  bool   _isCancelling = false;
 
-  String _groupName     = '';
-  int    _adminId       = 0;
-  int    _currentUserId = 0;
-  List   _members       = [];
+  String  _groupName     = '';
+  int     _adminId       = 0;
+  int     _currentUserId = 0;
+  List    _members       = [];
+
+  // Trip / payment info for cancel
+  int?    _tripId;
+  String? _cancelDeadline;
+  int     _pricePerHead = 0;
 
   late TextEditingController _nameController;
 
@@ -56,12 +62,10 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
 
   Future<void> _loadCurrentUser() async {
     final prefs = await SharedPreferences.getInstance();
-    // Use getInt directly — group.dart always saves with setInt
-    final id = prefs.getInt('user_id') ?? 0;
+    final id    = prefs.getInt('user_id') ?? 0;
     if (id != 0) {
       setState(() => _currentUserId = id);
     } else {
-      // Fallback: fetch from backend if not cached yet
       final token = prefs.getString('auth_token');
       if (token == null) return;
       try {
@@ -102,6 +106,10 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
           _adminId             = data['admin_id']   ?? _adminId;
           _members             = data['members']    ?? [];
           _nameController.text = _groupName;
+          // Payment / cancel info injected by the API if present
+          _tripId          = data['trip_id'];
+          _cancelDeadline  = data['cancel_deadline'];
+          _pricePerHead    = data['price_per_head'] ?? 0;
         });
       } else {
         _showSnack('Failed to load group details');
@@ -112,6 +120,97 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
       if (mounted) setState(() => _isLoading = false);
     }
   }
+
+  // ── Cancel trip ───────────────────────────────────────────────────────────
+
+  bool get _canCancel {
+    if (_tripId == null) return false;
+    if (_cancelDeadline == null) return true;
+    try {
+      return DateTime.now().isBefore(DateTime.parse(_cancelDeadline!));
+    } catch (_) {
+      return true;
+    }
+  }
+
+  Future<void> _cancelTrip() async {
+    if (_tripId == null) {
+      _showSnack('Trip information not available');
+      return;
+    }
+
+    final isAdmin = _currentUserId != 0 && _currentUserId == _adminId;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          isAdmin ? 'Cancel Trip for Everyone?' : 'Leave Trip?',
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        content: Text(
+          isAdmin
+              ? 'This will cancel the trip to $_groupName for all members. '
+                'Everyone will receive a cancellation and refund email of '
+                '₹$_pricePerHead. This action cannot be undone.'
+              : 'You will be removed from the trip and will receive a '
+                'refund of ₹$_pricePerHead. Continue?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('No, go back',
+                style: TextStyle(color: Colors.black54)),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(isAdmin ? 'Cancel Trip' : 'Leave Trip'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() => _isCancelling = true);
+    try {
+      final token    = await _getToken();
+      final response = await http.post(
+        Uri.parse('${AppConfig.baseUrl}/api/trips/$_tripId/cancel/'),
+        headers: {
+          'Content-Type':  'application/json',
+          'Authorization': 'Token $token',
+        },
+      );
+
+      if (!mounted) return;
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        _showSnack(data['message'] ?? 'Cancelled successfully.');
+        // Pop back to group list — the trip no longer exists
+        Navigator.of(context)
+          ..pop() // pop GroupDetailsPage
+          ..pop(); // pop GroupPage (chat screen)
+      } else {
+        final data = jsonDecode(response.body);
+        _showSnack(data['error'] ?? 'Cancellation failed.');
+      }
+    } catch (e) {
+      _showSnack('Error: $e');
+    } finally {
+      if (mounted) setState(() => _isCancelling = false);
+    }
+  }
+
+  // ── Rename ────────────────────────────────────────────────────────────────
 
   Future<void> _saveGroupName() async {
     final newName = _nameController.text.trim();
@@ -403,6 +502,43 @@ class _GroupDetailsPageState extends State<GroupDetailsPage> {
                             },
                           ),
                   ),
+
+                  // ── Cancel / Leave button ─────────────────────────────
+                  if (_canCancel)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: _isCancelling
+                            ? const Center(
+                                child: CircularProgressIndicator(
+                                    color: Colors.red))
+                            : OutlinedButton.icon(
+                                onPressed: _cancelTrip,
+                                icon: const Icon(Icons.cancel_outlined,
+                                    size: 18, color: Colors.red),
+                                label: Text(
+                                  isAdmin
+                                      ? 'Cancel Trip for Everyone'
+                                      : 'Leave Trip',
+                                  style: const TextStyle(
+                                    color: Colors.red,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 15,
+                                  ),
+                                ),
+                                style: OutlinedButton.styleFrom(
+                                  side:
+                                      const BorderSide(color: Colors.red),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius:
+                                          BorderRadius.circular(12)),
+                                  padding: const EdgeInsets.symmetric(
+                                      vertical: 14),
+                                ),
+                              ),
+                      ),
+                    ),
                 ],
               ),
       ),
